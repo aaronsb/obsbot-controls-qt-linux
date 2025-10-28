@@ -24,8 +24,14 @@ void Config::setDefaults()
     m_settings.faceAE = false;
     m_settings.faceFocus = false;
     m_settings.zoom = 1.0;            // No zoom
-    m_settings.pan = 0.0;             // Centered
-    m_settings.tilt = 0.0;            // Centered
+   m_settings.pan = 0.0;             // Centered
+   m_settings.tilt = 0.0;            // Centered
+
+    // AI / Tracking defaults
+    m_settings.aiMode = 0;            // AiWorkModeNone
+    m_settings.aiSubMode = 0;         // AiSubModeNormal
+    m_settings.autoZoom = false;
+    m_settings.trackSpeed = 2;        // AiTrackSpeedStandard
 
     // Image controls - use auto mode by default
     m_settings.brightnessAuto = true;
@@ -35,6 +41,19 @@ void Config::setDefaults()
     m_settings.saturationAuto = true;
     m_settings.saturation = 128;
     m_settings.whiteBalance = 0;      // Auto
+
+    // Audio defaults
+    m_settings.audioAutoGain = true;
+
+    // Video / preview
+    m_settings.previewFormat = "auto";
+
+    for (auto &preset : m_settings.presets) {
+        preset.defined = false;
+        preset.pan = 0.0;
+        preset.tilt = 0.0;
+        preset.zoom = 1.0;
+    }
 
     // Application settings
     m_settings.startMinimized = false;
@@ -200,6 +219,61 @@ bool Config::parseLine(const std::string &line, int lineNumber, std::vector<Vali
         return false;
     };
 
+    for (int i = 0; i < 3; ++i) {
+        std::string base = "preset" + std::to_string(i + 1) + "_";
+        if (key.rfind(base, 0) == 0) {
+            auto &preset = m_settings.presets[static_cast<size_t>(i)];
+            std::string suffix = key.substr(base.size());
+
+            if (suffix == "defined") {
+                if (!parseBool(value, preset.defined)) {
+                    addError(InvalidValue, base + "defined must be true/false or enabled/disabled");
+                    return false;
+                }
+                return true;
+            } else if (suffix == "pan") {
+                try {
+                    double pan = std::stod(value);
+                    if (pan < -1.0 || pan > 1.0) {
+                        addError(InvalidValue, base + "pan must be between -1.0 and 1.0");
+                        return false;
+                    }
+                    preset.pan = pan;
+                } catch (...) {
+                    addError(InvalidValue, base + "pan must be a number between -1.0 and 1.0");
+                    return false;
+                }
+                return true;
+            } else if (suffix == "tilt") {
+                try {
+                    double tilt = std::stod(value);
+                    if (tilt < -1.0 || tilt > 1.0) {
+                        addError(InvalidValue, base + "tilt must be between -1.0 and 1.0");
+                        return false;
+                    }
+                    preset.tilt = tilt;
+                } catch (...) {
+                    addError(InvalidValue, base + "tilt must be a number between -1.0 and 1.0");
+                    return false;
+                }
+                return true;
+            } else if (suffix == "zoom") {
+                try {
+                    double zoom = std::stod(value);
+                    if (zoom < 1.0 || zoom > 2.0) {
+                        addError(InvalidValue, base + "zoom must be between 1.0 and 2.0");
+                        return false;
+                    }
+                    preset.zoom = zoom;
+                } catch (...) {
+                    addError(InvalidValue, base + "zoom must be a number between 1.0 and 2.0");
+                    return false;
+                }
+                return true;
+            }
+        }
+    }
+
     if (key == "face_tracking") {
         if (!parseBool(value, m_settings.faceTracking)) {
             addError(InvalidValue, "face_tracking must be true/false or enabled/disabled");
@@ -265,6 +339,47 @@ bool Config::parseLine(const std::string &line, int lineNumber, std::vector<Vali
             m_settings.tilt = tilt;
         } catch (...) {
             addError(InvalidValue, "tilt must be a number between -1.0 and 1.0");
+            return false;
+        }
+    } else if (key == "ai_mode") {
+        try {
+            int mode = std::stoi(value);
+            if (mode < 0 || mode > 6) {
+                addError(InvalidValue, "ai_mode must be between 0 and 6");
+                return false;
+            }
+            m_settings.aiMode = mode;
+        } catch (...) {
+            addError(InvalidValue, "ai_mode must be an integer between 0 and 6");
+            return false;
+        }
+    } else if (key == "ai_sub_mode") {
+        try {
+            int subMode = std::stoi(value);
+            if (subMode < 0 || subMode > 5) {
+                addError(InvalidValue, "ai_sub_mode must be between 0 and 5");
+                return false;
+            }
+            m_settings.aiSubMode = subMode;
+        } catch (...) {
+            addError(InvalidValue, "ai_sub_mode must be an integer between 0 and 5");
+            return false;
+        }
+    } else if (key == "auto_zoom") {
+        if (!parseBool(value, m_settings.autoZoom)) {
+            addError(InvalidValue, "auto_zoom must be true/false or enabled/disabled");
+            return false;
+        }
+    } else if (key == "track_speed") {
+        try {
+            int trackSpeed = std::stoi(value);
+            if (trackSpeed < 0 || trackSpeed > 5) {
+                addError(InvalidValue, "track_speed must be between 0 and 5");
+                return false;
+            }
+            m_settings.trackSpeed = trackSpeed;
+        } catch (...) {
+            addError(InvalidValue, "track_speed must be an integer between 0 and 5");
             return false;
         }
     } else if (key == "brightness_auto") {
@@ -339,6 +454,13 @@ bool Config::parseLine(const std::string &line, int lineNumber, std::vector<Vali
             addError(InvalidValue, "white_balance must be auto/daylight/fluorescent/tungsten/flash/fine/cloudy/shade or numeric");
             return false;
         }
+    } else if (key == "audio_auto_gain") {
+        if (!parseBool(value, m_settings.audioAutoGain)) {
+            addError(InvalidValue, "audio_auto_gain must be true/false or enabled/disabled");
+            return false;
+        }
+    } else if (key == "preview_format") {
+        m_settings.previewFormat = value;
     } else if (key == "start_minimized") {
         if (!parseBool(value, m_settings.startMinimized)) {
             addError(InvalidValue, "start_minimized must be true/false or enabled/disabled");
@@ -375,6 +497,34 @@ bool Config::validateSettings(std::vector<ValidationError> &errors)
 
     if (m_settings.tilt < -1.0 || m_settings.tilt > 1.0) {
         addError("tilt out of range (must be -1.0 to 1.0)");
+    }
+
+    if (m_settings.aiMode < 0 || m_settings.aiMode > 6) {
+        addError("ai_mode out of range (must be 0-6)");
+    }
+
+    if (m_settings.aiSubMode < 0 || m_settings.aiSubMode > 5) {
+        addError("ai_sub_mode out of range (must be 0-5)");
+    }
+
+    if (m_settings.trackSpeed < 0 || m_settings.trackSpeed > 5) {
+        addError("track_speed out of range (must be 0-5)");
+    }
+
+    for (size_t i = 0; i < m_settings.presets.size(); ++i) {
+        const auto &preset = m_settings.presets[i];
+        if (!preset.defined) {
+            continue;
+        }
+        if (preset.pan < -1.0 || preset.pan > 1.0) {
+            addError("preset" + std::to_string(i + 1) + "_pan out of range (must be -1.0 to 1.0)");
+        }
+        if (preset.tilt < -1.0 || preset.tilt > 1.0) {
+            addError("preset" + std::to_string(i + 1) + "_tilt out of range (must be -1.0 to 1.0)");
+        }
+        if (preset.zoom < 1.0 || preset.zoom > 2.0) {
+            addError("preset" + std::to_string(i + 1) + "_zoom out of range (must be 1.0 to 2.0)");
+        }
     }
 
     return errors.empty();
@@ -441,6 +591,18 @@ bool Config::save()
     file << "# Tilt position (-1.0 to 1.0, 0 is center)\n";
     file << "tilt=" << m_settings.tilt << "\n\n";
 
+    file << "# AI Tracking Mode (0=None,1=Group,2=Human,3=Hand,4=Whiteboard,5=Desk)\n";
+    file << "ai_mode=" << m_settings.aiMode << "\n\n";
+
+    file << "# AI Human Sub-Mode (0=Normal,1=UpperBody,2=CloseUp,3=Headless,4=LowerBody)\n";
+    file << "ai_sub_mode=" << m_settings.aiSubMode << "\n\n";
+
+    file << "# Enable AI Auto Zoom\n";
+    file << "auto_zoom=" << (m_settings.autoZoom ? "enabled" : "disabled") << "\n\n";
+
+    file << "# Tracking Speed (0=Lazy,1=Slow,2=Standard,3=Fast,4=Crazy,5=Auto)\n";
+    file << "track_speed=" << m_settings.trackSpeed << "\n\n";
+
     // Image controls
     file << "# Brightness Auto Mode (when enabled, brightness slider is read-only)\n";
     file << "brightness_auto=" << (m_settings.brightnessAuto ? "enabled" : "disabled") << "\n";
@@ -471,6 +633,21 @@ bool Config::save()
         default: wbStr = "auto";
     }
     file << "white_balance=" << wbStr << "\n\n";
+
+    for (size_t i = 0; i < m_settings.presets.size(); ++i) {
+        const auto &preset = m_settings.presets[i];
+        file << "# PTZ Preset " << (i + 1) << "\n";
+        file << "preset" << (i + 1) << "_defined=" << (preset.defined ? "enabled" : "disabled") << "\n";
+        file << "preset" << (i + 1) << "_pan=" << preset.pan << "\n";
+        file << "preset" << (i + 1) << "_tilt=" << preset.tilt << "\n";
+        file << "preset" << (i + 1) << "_zoom=" << preset.zoom << "\n\n";
+    }
+
+    file << "# Audio auto gain control\n";
+    file << "audio_auto_gain=" << (m_settings.audioAutoGain ? "enabled" : "disabled") << "\n\n";
+
+    file << "# Preferred preview format (auto or WIDTHxHEIGHT@FPS)\n";
+    file << "preview_format=" << (m_settings.previewFormat.empty() ? "auto" : m_settings.previewFormat) << "\n\n";
 
     file << "# Application Settings\n";
     file << "# Start application minimized to system tray\n";

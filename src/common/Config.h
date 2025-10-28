@@ -4,6 +4,7 @@
 #include <string>
 #include <map>
 #include <vector>
+#include <array>
 
 /**
  * @brief Configuration manager for OBSBOT camera settings
@@ -30,6 +31,13 @@ public:
     };
 
     struct CameraSettings {
+        struct PresetSlot {
+            bool defined;
+            double pan;
+            double tilt;
+            double zoom;
+        };
+
         bool faceTracking;
         bool hdr;
         int fov;              // 0=Wide, 1=Medium, 2=Narrow
@@ -39,6 +47,12 @@ public:
         double pan;           // -1.0 to 1.0
         double tilt;          // -1.0 to 1.0
 
+        // AI / Tracking
+        int aiMode;           // Device::AiWorkModeType
+        int aiSubMode;        // Device::AiSubModeType
+        bool autoZoom;        // Enable adaptive auto zoom
+        int trackSpeed;       // Device::AiTrackSpeedType
+
         // Image controls
         bool brightnessAuto;  // Auto mode for brightness
         int brightness;       // Typically 0-255 or similar range
@@ -47,6 +61,14 @@ public:
         bool saturationAuto;  // Auto mode for saturation
         int saturation;       // Typically 0-255 or similar range
         int whiteBalance;     // 0=Auto, 1=Daylight, 2=Fluorescent, etc.
+
+        // Audio
+        bool audioAutoGain;   // Enable auto gain control for microphones
+
+        // Preview / video
+        std::string previewFormat; // Encoded as "widthxheight@fps" or "auto"
+
+        std::array<PresetSlot, 3> presets;
 
         // Application settings
         bool startMinimized;  // Start application minimized to tray
