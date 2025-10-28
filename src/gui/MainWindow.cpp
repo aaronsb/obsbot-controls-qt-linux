@@ -86,6 +86,8 @@ void MainWindow::setupUI()
             this, &MainWindow::onPreviewStarted);
     connect(m_previewWidget, &CameraPreviewWidget::previewFailed,
             this, &MainWindow::onPreviewFailed);
+    connect(m_previewWidget, &CameraPreviewWidget::preferredFormatChanged,
+            this, &MainWindow::onPreviewFormatChanged);
     // Don't add to layout yet - will be added when preview is enabled
 
     // Right: Controls sidebar (auto-sizes to content)
@@ -308,6 +310,7 @@ void MainWindow::loadConfiguration()
     m_settingsWidget->setSaturationAuto(settings.saturationAuto);
     m_settingsWidget->setSaturation(settings.saturation);
     m_settingsWidget->setWhiteBalance(settings.whiteBalance);
+    m_previewWidget->setPreferredFormatId(QString::fromStdString(settings.previewFormat));
 
     // Application settings - block signals to prevent saving during initialization
     m_startMinimizedCheckbox->blockSignals(true);
@@ -499,6 +502,14 @@ void MainWindow::onPreviewFailed(const QString &error)
 
     // Uncheck the toggle button since preview failed
     m_previewToggleButton->setChecked(false);
+}
+
+void MainWindow::onPreviewFormatChanged(const QString &formatId)
+{
+    auto settings = m_controller->getConfig().getSettings();
+    settings.previewFormat = formatId.toStdString();
+    m_controller->getConfig().setSettings(settings);
+    m_controller->saveConfig();
 }
 
 QString MainWindow::findObsbotVideoDevice()

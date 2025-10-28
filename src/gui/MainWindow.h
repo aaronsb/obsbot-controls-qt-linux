@@ -39,6 +39,7 @@ private slots:
     void onPreviewAspectRatioChanged(double ratio);
     void onPreviewStarted();
     void onPreviewFailed(const QString &error);
+    void onPreviewFormatChanged(const QString &formatId);
     void onTrayIconActivated(QSystemTrayIcon::ActivationReason reason);
     void onShowHideAction();
     void onQuitAction();
