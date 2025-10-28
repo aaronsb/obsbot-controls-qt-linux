@@ -88,6 +88,11 @@ CameraController::CameraState CameraController::getCurrentState()
     return isSettling() ? m_cachedState : m_currentState;
 }
 
+bool CameraController::hasTiny2Capabilities() const
+{
+    return isTiny2Family();
+}
+
 bool CameraController::enableAutoFraming(bool enabled)
 {
     if (!m_connected) return false;
@@ -107,12 +112,87 @@ bool CameraController::enableAutoFraming(bool enabled)
             });
         });
 
+        m_currentState.autoFramingEnabled = true;
+        emit stateChanged(m_currentState);
         return true;  // First command succeeded, second is pending
     } else {
-        return executeCommand("Disable AutoFraming", [this]() {
+        bool success = executeCommand("Disable AutoFraming", [this]() {
             return m_device->cameraSetMediaModeU(Device::MediaModeNormal);
         });
+        if (success) {
+            m_currentState.autoFramingEnabled = false;
+            emit stateChanged(m_currentState);
+        }
+        return success;
     }
+}
+
+bool CameraController::setAiMode(int mode, int subMode)
+{
+    if (!m_connected) return false;
+
+    auto workMode = static_cast<Device::AiWorkModeType>(mode);
+    bool success = executeCommand("Set AI Mode", [this, workMode, subMode]() {
+        return m_device->cameraSetAiModeU(workMode, subMode);
+    });
+
+    if (success) {
+        m_currentState.aiMode = mode;
+        m_currentState.aiSubMode = subMode;
+        m_currentState.autoFramingEnabled = (mode != Device::AiWorkModeNone);
+        emit stateChanged(m_currentState);
+    }
+
+    return success;
+}
+
+bool CameraController::setAutoZoom(bool enabled)
+{
+    if (!m_connected) return false;
+
+    bool success = executeCommand(enabled ? "Enable Auto Zoom" : "Disable Auto Zoom", [this, enabled]() {
+        return m_device->aiSetAiAutoZoomR(enabled);
+    });
+
+    if (success) {
+        m_currentState.autoZoomEnabled = enabled;
+        emit stateChanged(m_currentState);
+    }
+
+    return success;
+}
+
+bool CameraController::setTrackSpeed(int speedMode)
+{
+    if (!m_connected) return false;
+
+    auto speed = static_cast<Device::AiTrackSpeedType>(speedMode);
+    bool success = executeCommand("Set Tracking Speed", [this, speed]() {
+        return m_device->aiSetTrackSpeedTypeR(speed);
+    });
+
+    if (success) {
+        m_currentState.trackSpeedMode = speedMode;
+        emit stateChanged(m_currentState);
+    }
+
+    return success;
+}
+
+bool CameraController::setAudioAutoGain(bool enabled)
+{
+    if (!m_connected) return false;
+
+    bool success = executeCommand(enabled ? "Enable Audio Auto Gain" : "Disable Audio Auto Gain", [this, enabled]() {
+        return m_device->cameraSetAudioAutoGainU(enabled);
+    });
+
+    if (success) {
+        m_currentState.audioAutoGainEnabled = enabled;
+        emit stateChanged(m_currentState);
+    }
+
+    return success;
 }
 
 bool CameraController::setPanTilt(double pan, double tilt)
@@ -299,6 +379,9 @@ void CameraController::updateState()
     m_currentState.autoFocusEnabled = status.tiny.auto_focus;
     m_currentState.fovMode = status.tiny.fov;
     m_currentState.devStatus = status.tiny.dev_status;
+    m_currentState.autoFramingEnabled = (m_currentState.aiMode != Device::AiWorkModeNone);
+    m_currentState.trackSpeedMode = status.tiny.ai_tracker_speed;
+    m_currentState.audioAutoGainEnabled = status.tiny.audio_auto_gain;
 
     // Image controls - read current values from camera
     // Note: Preserve auto mode flags - camera doesn't have concept of "auto" for these
@@ -370,6 +453,13 @@ void CameraController::applyConfigToCamera()
     setZoom(settings.zoom);
     setPanTilt(settings.pan, settings.tilt);
 
+    if (isTiny2Family()) {
+        setAiMode(settings.aiMode, settings.aiSubMode);
+        setAutoZoom(settings.autoZoom);
+        setTrackSpeed(settings.trackSpeed);
+        setAudioAutoGain(settings.audioAutoGain);
+    }
+
     // Image controls
     setBrightness(settings.brightness);
     setContrast(settings.contrast);
@@ -390,13 +480,18 @@ void CameraController::applyCurrentStateToCamera(const CameraState &uiState)
 
     // Cache the intended state
     m_cachedState = uiState;
-    m_cachedState.aiMode = uiState.autoFramingEnabled ? 2 : 0;
 
     // Begin settling period - block status updates for 2 seconds
     beginSettling(2000);
 
     // Apply the current UI state to camera (respects user changes)
     enableAutoFraming(uiState.autoFramingEnabled);
+    if (isTiny2Family()) {
+        setAiMode(uiState.aiMode, uiState.aiSubMode);
+        setAutoZoom(uiState.autoZoomEnabled);
+        setTrackSpeed(uiState.trackSpeedMode);
+        setAudioAutoGain(uiState.audioAutoGainEnabled);
+    }
     setHDR(uiState.hdrEnabled);
     setFOV(uiState.fovMode);
     setFaceAE(uiState.faceAEEnabled);
@@ -417,7 +512,7 @@ void CameraController::saveCurrentStateToConfig()
     Config::CameraSettings settings = m_config.getSettings();
 
     // Update only camera-related settings from current state
-    settings.faceTracking = (m_currentState.aiMode != 0);
+    settings.faceTracking = m_currentState.autoFramingEnabled;
     settings.hdr = m_currentState.hdrEnabled;
     settings.fov = m_currentState.fovMode;
     settings.faceAE = m_currentState.faceAEEnabled;
@@ -425,6 +520,11 @@ void CameraController::saveCurrentStateToConfig()
     settings.zoom = m_currentState.zoom;
     settings.pan = m_currentState.pan;
     settings.tilt = m_currentState.tilt;
+    settings.aiMode = m_currentState.aiMode;
+    settings.aiSubMode = m_currentState.aiSubMode;
+    settings.autoZoom = m_currentState.autoZoomEnabled;
+    settings.trackSpeed = m_currentState.trackSpeedMode;
+    settings.audioAutoGain = m_currentState.audioAutoGainEnabled;
 
     // Image controls
     settings.brightnessAuto = m_currentState.brightnessAuto;
@@ -436,4 +536,11 @@ void CameraController::saveCurrentStateToConfig()
     settings.whiteBalance = m_currentState.whiteBalance;
 
     m_config.setSettings(settings);
+}
+
+bool CameraController::isTiny2Family() const
+{
+    return m_cameraInfo.productType == ObsbotProdTiny2 ||
+           m_cameraInfo.productType == ObsbotProdTiny2Lite ||
+           m_cameraInfo.productType == ObsbotProdTinySE;
 }

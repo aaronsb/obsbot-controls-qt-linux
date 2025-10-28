@@ -32,6 +32,9 @@ public:
         bool autoFramingEnabled;
         int aiMode;
         int aiSubMode;
+        bool autoZoomEnabled;
+        int trackSpeedMode;
+        bool audioAutoGainEnabled;
 
         // PTZ
         double pan;
@@ -70,9 +73,14 @@ public:
 
     // State
     CameraState getCurrentState();
+    bool hasTiny2Capabilities() const;
 
     // Tracking controls
     bool enableAutoFraming(bool enabled);
+    bool setAiMode(int mode, int subMode);
+    bool setAutoZoom(bool enabled);
+    bool setTrackSpeed(int speedMode);
+    bool setAudioAutoGain(bool enabled);
 
     // PTZ controls
     bool setPanTilt(double pan, double tilt);
@@ -122,6 +130,7 @@ private:
     CameraState m_cachedState;  // Cache intended state during settling
     Config m_config;
     QTimer *m_settlingTimer;  // Timer for settling period after config apply
+    bool isTiny2Family() const;
 
     // Helper
     bool executeCommand(const QString &description, std::function<int32_t()> command);
