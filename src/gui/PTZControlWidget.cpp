@@ -73,6 +73,46 @@ PTZControlWidget::PTZControlWidget(CameraController *controller, QWidget *parent
 
     groupLayout->addLayout(zoomLayout);
 
+    // Presets section
+    QGroupBox *presetGroup = new QGroupBox("PTZ Presets", this);
+    QVBoxLayout *presetLayout = new QVBoxLayout(presetGroup);
+    presetLayout->setSpacing(6);
+
+    for (int i = 0; i < 3; ++i) {
+        PresetUi presetUi{};
+        presetUi.defined = false;
+        presetUi.pan = 0.0;
+        presetUi.tilt = 0.0;
+        presetUi.zoom = 1.0;
+
+        QHBoxLayout *row = new QHBoxLayout();
+        row->setSpacing(8);
+        QLabel *titleLabel = new QLabel(QString("Preset %1").arg(i + 1), this);
+        titleLabel->setStyleSheet("font-weight: bold; font-size: 11px;");
+        row->addWidget(titleLabel);
+
+        presetUi.statusLabel = new QLabel("Empty", this);
+        presetUi.statusLabel->setStyleSheet("color: #666; font-size: 11px;");
+        row->addWidget(presetUi.statusLabel, 1);
+
+        presetUi.recallButton = new QPushButton("Recall", this);
+        presetUi.recallButton->setProperty("presetIndex", i);
+        presetUi.recallButton->setEnabled(false);
+        connect(presetUi.recallButton, &QPushButton::clicked, this, &PTZControlWidget::onRecallPreset);
+        row->addWidget(presetUi.recallButton);
+
+        presetUi.saveButton = new QPushButton("Save", this);
+        presetUi.saveButton->setProperty("presetIndex", i);
+        connect(presetUi.saveButton, &QPushButton::clicked, this, &PTZControlWidget::onStorePreset);
+        row->addWidget(presetUi.saveButton);
+
+        presetLayout->addLayout(row);
+        m_presets[static_cast<size_t>(i)] = presetUi;
+        updatePresetLabel(i);
+    }
+
+    groupLayout->addWidget(presetGroup);
+
     layout->addWidget(groupBox);
 }
 // 1.0 moves Tiny Lite 4K too much for fine control; updated to .05 to give finer control of PTZ adjustments
@@ -135,4 +175,103 @@ void PTZControlWidget::updateFromState(const CameraController::CameraState &stat
     m_positionLabel->setText(QString("Position: Pan %1, Tilt %2")
         .arg(state.pan, 0, 'f', 2)
         .arg(state.tilt, 0, 'f', 2));
+}
+
+void PTZControlWidget::applyPresetStates(const std::array<PresetState, 3> &presets)
+{
+    for (int i = 0; i < 3; ++i) {
+        auto &ui = m_presets[static_cast<size_t>(i)];
+        const auto &preset = presets[static_cast<size_t>(i)];
+        ui.defined = preset.defined;
+        ui.pan = preset.pan;
+        ui.tilt = preset.tilt;
+        ui.zoom = preset.zoom;
+        updatePresetLabel(i);
+    }
+}
+
+std::array<PTZControlWidget::PresetState, 3> PTZControlWidget::currentPresets() const
+{
+    std::array<PresetState, 3> out{};
+    for (int i = 0; i < 3; ++i) {
+        const auto &ui = m_presets[static_cast<size_t>(i)];
+        out[static_cast<size_t>(i)] = {ui.defined, ui.pan, ui.tilt, ui.zoom};
+    }
+    return out;
+}
+
+void PTZControlWidget::onRecallPreset()
+{
+    auto *button = qobject_cast<QPushButton*>(sender());
+    if (!button) {
+        return;
+    }
+    int index = button->property("presetIndex").toInt();
+    if (index < 0 || index >= static_cast<int>(m_presets.size())) {
+        return;
+    }
+
+    auto &preset = m_presets[static_cast<size_t>(index)];
+    if (!preset.defined) {
+        return;
+    }
+
+    m_controller->setPanTilt(preset.pan, preset.tilt);
+    m_controller->setZoom(preset.zoom);
+
+    auto state = m_controller->getCurrentState();
+    m_zoomSlider->blockSignals(true);
+    m_zoomSlider->setValue(static_cast<int>(state.zoom * 10));
+    m_zoomSlider->blockSignals(false);
+    m_zoomLabel->setText(QString("%1x").arg(state.zoom, 0, 'f', 1));
+    m_positionLabel->setText(QString("Position: Pan %1, Tilt %2")
+        .arg(state.pan, 0, 'f', 2)
+        .arg(state.tilt, 0, 'f', 2));
+}
+
+void PTZControlWidget::onStorePreset()
+{
+    auto *button = qobject_cast<QPushButton*>(sender());
+    if (!button) {
+        return;
+    }
+    int index = button->property("presetIndex").toInt();
+    if (index < 0 || index >= static_cast<int>(m_presets.size())) {
+        return;
+    }
+
+    auto state = m_controller->getCurrentState();
+    auto &preset = m_presets[static_cast<size_t>(index)];
+    preset.defined = true;
+    preset.pan = state.pan;
+    preset.tilt = state.tilt;
+    preset.zoom = state.zoom;
+    updatePresetLabel(index);
+
+    emit presetUpdated(index, preset.pan, preset.tilt, preset.zoom, true);
+}
+
+void PTZControlWidget::updatePresetLabel(int index)
+{
+    if (index < 0 || index >= static_cast<int>(m_presets.size())) {
+        return;
+    }
+    auto &preset = m_presets[static_cast<size_t>(index)];
+    if (!preset.statusLabel) {
+        return;
+    }
+
+    if (preset.defined) {
+        preset.statusLabel->setText(
+            QString("Pan %1, Tilt %2, Zoom %3x")
+                .arg(preset.pan, 0, 'f', 2)
+                .arg(preset.tilt, 0, 'f', 2)
+                .arg(preset.zoom, 0, 'f', 1));
+    } else {
+        preset.statusLabel->setText("Empty");
+    }
+
+    if (preset.recallButton) {
+        preset.recallButton->setEnabled(preset.defined);
+    }
 }
