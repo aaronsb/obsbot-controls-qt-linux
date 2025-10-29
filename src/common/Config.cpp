@@ -58,6 +58,8 @@ void Config::setDefaults()
 
     // Application settings
     m_settings.startMinimized = false;
+    m_settings.virtualCameraEnabled = false;
+    m_settings.virtualCameraDevice = "/dev/video42";
 }
 
 std::string Config::getXdgConfigHome() const
@@ -177,7 +179,9 @@ bool Config::load(std::vector<ValidationError> &errors)
         "auto_zoom",
         "track_speed",
         "audio_auto_gain",
-        "preview_format"
+        "preview_format",
+        "virtual_camera_enabled",
+        "virtual_camera_device"
     };
 
     auto isPresetKey = [](const std::string &key) -> bool {
@@ -498,6 +502,17 @@ bool Config::parseLine(const std::string &line, int lineNumber, std::vector<Vali
             addError(InvalidValue, "start_minimized must be true/false or enabled/disabled");
             return false;
         }
+    } else if (key == "virtual_camera_enabled") {
+        if (!parseBool(value, m_settings.virtualCameraEnabled)) {
+            addError(InvalidValue, "virtual_camera_enabled must be true/false or enabled/disabled");
+            return false;
+        }
+    } else if (key == "virtual_camera_device") {
+        if (value.empty()) {
+            addError(InvalidValue, "virtual_camera_device cannot be empty");
+            return false;
+        }
+        m_settings.virtualCameraDevice = value;
     }
 
     return true;
@@ -557,6 +572,10 @@ bool Config::validateSettings(std::vector<ValidationError> &errors)
         if (preset.zoom < 1.0 || preset.zoom > 2.0) {
             addError("preset" + std::to_string(i + 1) + "_zoom out of range (must be 1.0 to 2.0)");
         }
+    }
+
+    if (m_settings.virtualCameraDevice.empty()) {
+        addError("virtual_camera_device cannot be empty");
     }
 
     return errors.empty();
@@ -684,6 +703,10 @@ bool Config::save()
     file << "# Application Settings\n";
     file << "# Start application minimized to system tray\n";
     file << "start_minimized=" << (m_settings.startMinimized ? "enabled" : "disabled") << "\n";
+
+    file << "\n# Virtual camera output\n";
+    file << "virtual_camera_enabled=" << (m_settings.virtualCameraEnabled ? "enabled" : "disabled") << "\n";
+    file << "virtual_camera_device=" << (m_settings.virtualCameraDevice.empty() ? "/dev/video42" : m_settings.virtualCameraDevice) << "\n";
 
     file.close();
     std::cout << "[Config] Configuration saved successfully to " << configPath << std::endl;

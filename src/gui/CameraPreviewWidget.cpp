@@ -1,4 +1,5 @@
 #include "CameraPreviewWidget.h"
+#include "VirtualCameraStreamer.h"
 
 #include <QCamera>
 #include <QCameraDevice>
@@ -10,6 +11,7 @@
 #include <QSignalBlocker>
 #include <QStringList>
 #include <QVideoWidget>
+#include <QVideoSink>
 #include <QVBoxLayout>
 #include <QHBoxLayout>
 
@@ -63,6 +65,7 @@ CameraPreviewWidget::CameraPreviewWidget(QWidget *parent)
     , m_formatCombo(nullptr)
     , m_statusLabel(nullptr)
     , m_controlRow(nullptr)
+    , m_virtualCameraStreamer(nullptr)
     , m_selectedFormatId(QStringLiteral("auto"))
     , m_previewEnabled(false)
     , m_isApplyingFormat(false)
@@ -107,6 +110,12 @@ void CameraPreviewWidget::setupUI()
     m_videoWidget->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Expanding);
     m_videoWidget->setStyleSheet("background-color: palette(window);");
     layout->addWidget(m_videoWidget, 1);
+
+    if (auto sink = m_videoWidget->videoSink(); sink && m_virtualCameraStreamer) {
+        connect(sink, &QVideoSink::videoFrameChanged,
+                m_virtualCameraStreamer, &VirtualCameraStreamer::onVideoFrameChanged,
+                Qt::UniqueConnection);
+    }
 }
 
 bool CameraPreviewWidget::isPreviewEnabled() const
@@ -235,6 +244,12 @@ bool CameraPreviewWidget::initializeCamera()
     m_captureSession = new QMediaCaptureSession(this);
     m_captureSession->setCamera(m_camera);
     m_captureSession->setVideoOutput(m_videoWidget);
+
+    if (auto sink = m_videoWidget->videoSink(); sink && m_virtualCameraStreamer) {
+        connect(sink, &QVideoSink::videoFrameChanged,
+                m_virtualCameraStreamer, &VirtualCameraStreamer::onVideoFrameChanged,
+                Qt::UniqueConnection);
+    }
 
     return true;
 }
@@ -548,4 +563,25 @@ void CameraPreviewWidget::setControlsVisible(bool visible)
     if (m_controlRow) {
         m_controlRow->setVisible(visible);
     }
+}
+
+void CameraPreviewWidget::setVirtualCameraStreamer(VirtualCameraStreamer *streamer)
+{
+    if (m_virtualCameraStreamer == streamer) {
+        return;
+    }
+
+    if (auto sink = m_videoWidget ? m_videoWidget->videoSink() : nullptr) {
+        if (m_virtualCameraStreamer) {
+            disconnect(sink, &QVideoSink::videoFrameChanged,
+                       m_virtualCameraStreamer, &VirtualCameraStreamer::onVideoFrameChanged);
+        }
+        if (streamer) {
+            connect(sink, &QVideoSink::videoFrameChanged,
+                    streamer, &VirtualCameraStreamer::onVideoFrameChanged,
+                    Qt::UniqueConnection);
+        }
+    }
+
+    m_virtualCameraStreamer = streamer;
 }

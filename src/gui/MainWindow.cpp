@@ -1,5 +1,6 @@
 #include "MainWindow.h"
 #include "PreviewWindow.h"
+#include "VirtualCameraStreamer.h"
 
 #include <QMessageBox>
 #include <QWidget>
@@ -21,6 +22,8 @@
 #include <QTabWidget>
 #include <QSpacerItem>
 #include <QSizePolicy>
+#include <QGroupBox>
+#include <QLineEdit>
 #include <QColor>
 #include <QPalette>
 #include <QList>
@@ -67,7 +70,11 @@ MainWindow::MainWindow(QWidget *parent)
     , m_dockedMinWidth(0)
     , m_previewCardMinWidth(0)
     , m_previewCardMaxWidth(QWIDGETSIZE_MAX)
+    , m_virtualCameraCheckbox(nullptr)
+    , m_virtualCameraDeviceEdit(nullptr)
+    , m_virtualCameraStreamer(nullptr)
     , m_isApplyingStyle(false)
+    , m_virtualCameraErrorNotified(false)
 {
     setWindowTitle("OBSBOT Control");
     setWindowIcon(QIcon(":/icons/camera.svg"));
@@ -84,6 +91,10 @@ MainWindow::MainWindow(QWidget *parent)
             this, &MainWindow::onStateChanged);
     connect(m_controller, &CameraController::commandFailed,
             this, &MainWindow::onCommandFailed);
+
+    m_virtualCameraStreamer = new VirtualCameraStreamer(this);
+    connect(m_virtualCameraStreamer, &VirtualCameraStreamer::errorOccurred,
+            this, &MainWindow::onVirtualCameraError);
 
     setupUI();
     setupTrayIcon();
@@ -162,6 +173,7 @@ void MainWindow::setupUI()
     previewLayout->addWidget(m_previewStack, 1);
 
     m_previewWidget = new CameraPreviewWidget();
+    m_previewWidget->setVirtualCameraStreamer(m_virtualCameraStreamer);
     m_previewWidget->setControlsVisible(true);
     m_previewWidget->setMinimumSize(320, 240);
     m_previewStack->addWidget(m_previewWidget);
@@ -248,8 +260,35 @@ void MainWindow::setupUI()
     m_tabWidget->setDocumentMode(true);
     m_tabWidget->addTab(m_trackingWidget, tr("Tracking"));
     m_tabWidget->addTab(m_ptzWidget, tr("Presets"));
-    m_tabWidget->addTab(m_settingsWidget, tr("Image"));
-    controlLayout->addWidget(m_tabWidget, 1);
+   m_tabWidget->addTab(m_settingsWidget, tr("Image"));
+   controlLayout->addWidget(m_tabWidget, 1);
+
+    QGroupBox *virtualCameraGroup = new QGroupBox(tr("Virtual Camera"), m_controlCard);
+    QVBoxLayout *virtualLayout = new QVBoxLayout(virtualCameraGroup);
+    virtualLayout->setContentsMargins(16, 16, 16, 16);
+    virtualLayout->setSpacing(10);
+
+    m_virtualCameraCheckbox = new QCheckBox(tr("Enable virtual camera output"), virtualCameraGroup);
+    m_virtualCameraCheckbox->setObjectName("footerCheckbox");
+    connect(m_virtualCameraCheckbox, &QCheckBox::toggled,
+            this, &MainWindow::onVirtualCameraToggled);
+    virtualLayout->addWidget(m_virtualCameraCheckbox);
+
+    QHBoxLayout *virtualDeviceLayout = new QHBoxLayout();
+    virtualDeviceLayout->setContentsMargins(0, 0, 0, 0);
+    virtualDeviceLayout->setSpacing(8);
+
+    QLabel *virtualDeviceLabel = new QLabel(tr("Device path"), virtualCameraGroup);
+    virtualDeviceLayout->addWidget(virtualDeviceLabel);
+
+    m_virtualCameraDeviceEdit = new QLineEdit(virtualCameraGroup);
+    m_virtualCameraDeviceEdit->setPlaceholderText("/dev/video42");
+    connect(m_virtualCameraDeviceEdit, &QLineEdit::editingFinished,
+            this, &MainWindow::onVirtualCameraDeviceEdited);
+    virtualDeviceLayout->addWidget(m_virtualCameraDeviceEdit, 1);
+
+    virtualLayout->addLayout(virtualDeviceLayout);
+    controlLayout->addWidget(virtualCameraGroup);
 
     m_startMinimizedCheckbox = new QCheckBox(tr("Launch minimized / Close to tray"), m_controlCard);
     m_startMinimizedCheckbox->setObjectName("footerCheckbox");
@@ -463,6 +502,16 @@ void MainWindow::applyModernStyle()
             border: 1px solid %30;
             selection-background-color: %31;
             selection-color: %32;
+        }
+        QLineEdit {
+            border: 1px solid %27;
+            border-radius: 10px;
+            padding: 6px 10px;
+            background-color: %28;
+            color: %15;
+        }
+        QLineEdit:focus {
+            border: 1px solid %31;
         }
         QGroupBox {
             border: 1px solid %33;
@@ -742,6 +791,7 @@ void MainWindow::onTogglePreview(bool enabled)
         m_previewStack->setCurrentWidget(m_previewPlaceholder);
     }
 
+    updateVirtualCameraStreamerState();
     updatePreviewControls();
 }
 
@@ -857,6 +907,27 @@ void MainWindow::updateStatus()
     m_statusLabel->setText("Status: " + statusParts.join(" | "));
 }
 
+void MainWindow::updateVirtualCameraStreamerState()
+{
+    if (!m_virtualCameraStreamer) {
+        return;
+    }
+
+    QString devicePath;
+    if (m_virtualCameraDeviceEdit) {
+        devicePath = m_virtualCameraDeviceEdit->text().trimmed();
+    }
+    if (devicePath.isEmpty()) {
+        devicePath = QStringLiteral("/dev/video42");
+    }
+
+    m_virtualCameraStreamer->setDevicePath(devicePath);
+
+    const bool enableOutput = m_virtualCameraCheckbox && m_virtualCameraCheckbox->isChecked()
+        && m_previewWidget && m_previewWidget->isPreviewEnabled();
+    m_virtualCameraStreamer->setEnabled(enableOutput);
+}
+
 void MainWindow::loadConfiguration()
 {
     std::vector<Config::ValidationError> errors;
@@ -904,6 +975,21 @@ void MainWindow::loadConfiguration()
     m_startMinimizedCheckbox->blockSignals(true);
     m_startMinimizedCheckbox->setChecked(settings.startMinimized);
     m_startMinimizedCheckbox->blockSignals(false);
+
+    if (m_virtualCameraCheckbox) {
+        m_virtualCameraCheckbox->blockSignals(true);
+        m_virtualCameraCheckbox->setChecked(settings.virtualCameraEnabled);
+        m_virtualCameraCheckbox->blockSignals(false);
+    }
+
+    if (m_virtualCameraDeviceEdit) {
+        m_virtualCameraDeviceEdit->blockSignals(true);
+        m_virtualCameraDeviceEdit->setText(QString::fromStdString(settings.virtualCameraDevice));
+        m_virtualCameraDeviceEdit->blockSignals(false);
+    }
+
+    m_virtualCameraErrorNotified = false;
+    updateVirtualCameraStreamerState();
 }
 
 void MainWindow::handleConfigErrors(const std::vector<Config::ValidationError> &errors)
@@ -1291,4 +1377,70 @@ void MainWindow::onStartMinimizedToggled(bool checked)
     std::cout << "[MainWindow] Calling saveConfig()..." << std::endl;
     bool saved = m_controller->saveConfig();
     std::cout << "[MainWindow] saveConfig() returned: " << saved << std::endl;
+}
+
+void MainWindow::onVirtualCameraToggled(bool enabled)
+{
+    m_virtualCameraErrorNotified = false;
+
+    auto settings = m_controller->getConfig().getSettings();
+    settings.virtualCameraEnabled = enabled;
+    m_controller->getConfig().setSettings(settings);
+    m_controller->saveConfig();
+
+    updateVirtualCameraStreamerState();
+
+    if (enabled && !m_previewWidget->isPreviewEnabled()) {
+        QMessageBox::information(this,
+            tr("Virtual Camera Ready"),
+            tr("The virtual camera will start streaming once the live preview is enabled."));
+    }
+}
+
+void MainWindow::onVirtualCameraDeviceEdited()
+{
+    if (!m_virtualCameraDeviceEdit) {
+        return;
+    }
+
+    QString path = m_virtualCameraDeviceEdit->text().trimmed();
+    if (path.isEmpty()) {
+        path = QStringLiteral("/dev/video42");
+        m_virtualCameraDeviceEdit->setText(path);
+    }
+
+    auto settings = m_controller->getConfig().getSettings();
+    settings.virtualCameraDevice = path.toStdString();
+    m_controller->getConfig().setSettings(settings);
+    m_controller->saveConfig();
+
+    m_virtualCameraErrorNotified = false;
+    updateVirtualCameraStreamerState();
+}
+
+void MainWindow::onVirtualCameraError(const QString &message)
+{
+    if (m_virtualCameraErrorNotified) {
+        return;
+    }
+    m_virtualCameraErrorNotified = true;
+
+    const QString detailedMessage = tr("Failed to publish frames to the virtual camera.\n\n%1\n\n" \
+        "Ensure the v4l2loopback module is loaded and the device path is writable.")
+        .arg(message);
+
+    QMessageBox::warning(this, tr("Virtual Camera Error"), detailedMessage);
+
+    if (m_virtualCameraCheckbox) {
+        m_virtualCameraCheckbox->blockSignals(true);
+        m_virtualCameraCheckbox->setChecked(false);
+        m_virtualCameraCheckbox->blockSignals(false);
+    }
+
+    auto settings = m_controller->getConfig().getSettings();
+    settings.virtualCameraEnabled = false;
+    m_controller->getConfig().setSettings(settings);
+    m_controller->saveConfig();
+
+    updateVirtualCameraStreamerState();
 }

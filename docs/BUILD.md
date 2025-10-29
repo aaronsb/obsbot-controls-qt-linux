@@ -69,6 +69,26 @@ sudo dnf install lsof
 
 This enables the application to detect when other programs are using the camera.
 
+#### Virtual Camera Output (Optional)
+```bash
+# Arch
+sudo pacman -S v4l2loopback-dkms v4l-utils
+
+# Debian/Ubuntu
+sudo apt install v4l2loopback-dkms v4l2loopback-utils v4l-utils
+
+# Fedora
+sudo dnf install v4l2loopback v4l-utils
+```
+
+Load the module after installation:
+
+```bash
+sudo modprobe v4l2loopback video_nr=42 card_label="OBSBOT Virtual Camera" exclusive_caps=1
+```
+
+Adjust `video_nr` or `card_label` as needed. Ensure the device path matches the value configured inside the application (default: `/dev/video42`).
+
 ### Minimum Versions
 - **CMake**: 3.16 or later
 - **Qt6**: 6.2 or later

@@ -21,6 +21,8 @@ class QStackedWidget;
 class QTabWidget;
 class QFrame;
 class QWidget;
+class QLineEdit;
+class VirtualCameraStreamer;
 
 /**
  * @brief Main application window
@@ -53,6 +55,9 @@ private slots:
     void onQuitAction();
     void onStartMinimizedToggled(bool checked);
     void onPreviewWindowClosed();
+    void onVirtualCameraToggled(bool enabled);
+    void onVirtualCameraDeviceEdited();
+    void onVirtualCameraError(const QString &message);
 
 private:
     void setupUI();
@@ -67,6 +72,7 @@ private:
     void attachPreviewToPanel();
     void updatePreviewControls();
     void updateStatusBanner(bool connected);
+    void updateVirtualCameraStreamerState();
 
     // Controller
     CameraController *m_controller;
@@ -88,6 +94,8 @@ private:
     QTabWidget *m_tabWidget;
     QFrame *m_statusBanner;
     QHBoxLayout *m_mainLayout;
+    QCheckBox *m_virtualCameraCheckbox;
+    QLineEdit *m_virtualCameraDeviceEdit;
 
     // Control widgets
     TrackingControlWidget *m_trackingWidget;
@@ -95,6 +103,7 @@ private:
     CameraSettingsWidget *m_settingsWidget;
     CameraPreviewWidget *m_previewWidget;
     PreviewWindow *m_previewWindow;
+    VirtualCameraStreamer *m_virtualCameraStreamer;
 
     // Status timer
     QTimer *m_statusTimer;
@@ -112,6 +121,7 @@ private:
     QMenu *m_trayMenu;
 
     bool m_isApplyingStyle;
+    bool m_virtualCameraErrorNotified;
 
 protected:
     bool event(QEvent *event) override;

@@ -11,6 +11,8 @@ class QLabel;
 class QMediaCaptureSession;
 class QVideoWidget;
 class QWidget;
+class VirtualCameraStreamer;
+class QVideoSink;
 
 /**
  * @brief Camera preview widget with enable/disable control
@@ -36,6 +38,7 @@ public:
     QString preferredFormatId() const { return m_selectedFormatId; }
     void setPreferredFormatId(const QString &formatId);
     void setControlsVisible(bool visible);
+    void setVirtualCameraStreamer(VirtualCameraStreamer *streamer);
 
 signals:
     void previewStateChanged(bool enabled);
@@ -70,6 +73,7 @@ private:
     QComboBox *m_formatCombo;
     QLabel *m_statusLabel;
     QWidget *m_controlRow;
+    VirtualCameraStreamer *m_virtualCameraStreamer;
     QString m_selectedFormatId;
     QString m_requestedDeviceId;
     QList<QCameraFormat> m_availableFormats;
