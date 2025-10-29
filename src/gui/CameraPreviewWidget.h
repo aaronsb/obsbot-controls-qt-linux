@@ -3,13 +3,14 @@
 
 #include <QWidget>
 #include <QCamera>
-#include <QVideoWidget>
-#include <QPushButton>
-#include <QGroupBox>
-#include <QMediaCaptureSession>
-#include <QComboBox>
-#include <QLabel>
 #include <QCameraFormat>
+
+class QCameraDevice;
+class QComboBox;
+class QLabel;
+class QMediaCaptureSession;
+class QVideoWidget;
+class QWidget;
 
 /**
  * @brief Camera preview widget with enable/disable control
@@ -30,8 +31,11 @@ public:
 
     bool isPreviewEnabled() const;
     void enablePreview(bool enabled);
+    void setCameraDeviceId(const QString &deviceId);
+    QString cameraDeviceId() const { return m_requestedDeviceId; }
     QString preferredFormatId() const { return m_selectedFormatId; }
     void setPreferredFormatId(const QString &formatId);
+    void setControlsVisible(bool visible);
 
 signals:
     void previewStateChanged(bool enabled);
@@ -43,22 +47,35 @@ signals:
 private slots:
     void onCameraError(QCamera::Error error);
     void onFormatSelectionChanged(int index);
+    void onCameraActiveChanged(bool active);
 
 private:
     void setupUI();
+    bool initializeCamera();
     void startPreview();
     void stopPreview();
     QCameraFormat findFormatById(const QString &id) const;
+    QCameraDevice resolveCameraDevice() const;
     void refreshFormatOptions(const QCameraDevice &device);
+    void applySelectedFormat();
+    void updateAspectRatioFromFormat(const QCameraFormat &format);
+    void updateStatus(const QString &message);
+    QCameraFormat selectBestFallbackFormat() const;
+    QCameraFormat chooseDefaultFormat() const;
+    bool isJpegFormat(const QCameraFormat &format) const;
 
     QCamera *m_camera;
     QMediaCaptureSession *m_captureSession;
     QVideoWidget *m_videoWidget;
     QComboBox *m_formatCombo;
+    QLabel *m_statusLabel;
+    QWidget *m_controlRow;
     QString m_selectedFormatId;
+    QString m_requestedDeviceId;
     QList<QCameraFormat> m_availableFormats;
 
     bool m_previewEnabled;
+    bool m_isApplyingFormat;
 };
 
 #endif // CAMERAPREVIEWWIDGET_H
