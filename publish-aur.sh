@@ -1,0 +1,180 @@
+#!/bin/bash
+#
+# OBSBOT Control - AUR Publishing Script
+#
+# Automates the process of publishing updates to the AUR package.
+# Usage: ./publish-aur.sh [commit-message]
+#
+
+set -e
+
+# Colors for output
+if [ -t 1 ]; then
+    RED='\033[0;31m'
+    GREEN='\033[0;32m'
+    YELLOW='\033[1;33m'
+    BLUE='\033[0;34m'
+    NC='\033[0m'
+else
+    RED=''
+    GREEN=''
+    YELLOW=''
+    BLUE=''
+    NC=''
+fi
+
+print_msg() {
+    local color=$1
+    shift
+    echo -e "${color}$@${NC}"
+}
+
+print_msg "$GREEN" "═══════════════════════════════════════════════════════"
+print_msg "$GREEN" "  OBSBOT Control - AUR Publishing"
+print_msg "$GREEN" "═══════════════════════════════════════════════════════"
+echo ""
+
+# Check we're in the right directory
+if [ ! -f "PKGBUILD" ]; then
+    print_msg "$RED" "❌ Error: PKGBUILD not found in current directory"
+    exit 1
+fi
+
+# Get version from PKGBUILD
+PKGVER=$(grep '^pkgver=' PKGBUILD | cut -d'=' -f2)
+PKGREL=$(grep '^pkgrel=' PKGBUILD | cut -d'=' -f2)
+print_msg "$BLUE" "📦 Package: obsbot-camera-control ${PKGVER}-${PKGREL}"
+echo ""
+
+# Check if we're on a clean git state
+if ! git diff-index --quiet HEAD -- 2>/dev/null; then
+    print_msg "$YELLOW" "⚠️  Warning: You have uncommitted changes"
+    git status --short
+    echo ""
+    read -p "Continue anyway? [y/N] " -n 1 -r
+    echo ""
+    if [[ ! $REPLY =~ ^[Yy]$ ]]; then
+        print_msg "$YELLOW" "Publish cancelled. Commit your changes first."
+        exit 0
+    fi
+fi
+
+# Check if tag exists for this version
+TAG_NAME="v${PKGVER}"
+if ! git rev-parse "$TAG_NAME" >/dev/null 2>&1; then
+    print_msg "$YELLOW" "⚠️  Warning: Git tag $TAG_NAME does not exist"
+    read -p "Create tag $TAG_NAME now? [y/N] " -n 1 -r
+    echo ""
+    if [[ $REPLY =~ ^[Yy]$ ]]; then
+        git tag -a "$TAG_NAME" -m "Release version ${PKGVER}"
+        print_msg "$GREEN" "✓ Created tag $TAG_NAME"
+        echo ""
+    else
+        print_msg "$RED" "❌ Tag required for AUR package. Aborting."
+        exit 1
+    fi
+else
+    # Tag exists, check if it's pushed to remote
+    print_msg "$GREEN" "✓ Tag $TAG_NAME exists locally"
+
+    # Check if tag is on remote
+    if git ls-remote --tags origin | grep -q "refs/tags/$TAG_NAME"; then
+        print_msg "$GREEN" "✓ Tag $TAG_NAME is pushed to remote"
+    else
+        print_msg "$YELLOW" "⚠️  Warning: Tag $TAG_NAME exists locally but not on remote"
+        read -p "Push tag to remote now? [Y/n] " -n 1 -r
+        echo ""
+        if [[ ! $REPLY =~ ^[Nn]$ ]]; then
+            git push origin "$TAG_NAME"
+            print_msg "$GREEN" "✓ Pushed tag $TAG_NAME to remote"
+        else
+            print_msg "$YELLOW" "⚠️  Tag not pushed - users may not be able to install from AUR!"
+        fi
+    fi
+    echo ""
+fi
+
+# Regenerate .SRCINFO
+print_msg "$BLUE" "🔄 Regenerating .SRCINFO..."
+makepkg --printsrcinfo > .SRCINFO
+print_msg "$GREEN" "✓ .SRCINFO updated"
+echo ""
+
+# Commit .SRCINFO to main repo if changed
+if ! git diff --quiet .SRCINFO 2>/dev/null; then
+    print_msg "$BLUE" "💾 Committing .SRCINFO to main repository..."
+    git add .SRCINFO
+    git commit -m "Update .SRCINFO for version ${PKGVER}-${PKGREL}"
+    print_msg "$GREEN" "✓ Committed to main repository"
+    echo ""
+fi
+
+# Setup AUR repository
+AUR_DIR="/tmp/obsbot-camera-control-aur"
+if [ -d "$AUR_DIR" ]; then
+    print_msg "$BLUE" "🔄 Updating existing AUR repository..."
+    cd "$AUR_DIR"
+    git pull
+    cd - > /dev/null
+else
+    print_msg "$BLUE" "📥 Cloning AUR repository..."
+    git clone ssh://aur@aur.archlinux.org/obsbot-camera-control.git "$AUR_DIR"
+fi
+print_msg "$GREEN" "✓ AUR repository ready"
+echo ""
+
+# Copy files to AUR repo
+print_msg "$BLUE" "📋 Copying PKGBUILD and .SRCINFO..."
+cp PKGBUILD .SRCINFO "$AUR_DIR/"
+print_msg "$GREEN" "✓ Files copied"
+echo ""
+
+# Commit to AUR
+cd "$AUR_DIR"
+git add PKGBUILD .SRCINFO
+
+# Check if there are changes
+if git diff --cached --quiet; then
+    print_msg "$YELLOW" "ℹ️  No changes to publish to AUR"
+    exit 0
+fi
+
+# Get commit message
+if [ -n "$1" ]; then
+    COMMIT_MSG="$1"
+else
+    COMMIT_MSG="Update to version ${PKGVER}-${PKGREL}"
+fi
+
+print_msg "$BLUE" "💾 Committing to AUR..."
+git commit -m "$COMMIT_MSG"
+print_msg "$GREEN" "✓ Committed: $COMMIT_MSG"
+echo ""
+
+# Show what will be pushed
+print_msg "$YELLOW" "📤 Ready to push to AUR:"
+git log --oneline -1
+echo ""
+read -p "Push to AUR now? [Y/n] " -n 1 -r
+echo ""
+
+if [[ $REPLY =~ ^[Nn]$ ]]; then
+    print_msg "$YELLOW" "Publish cancelled. Changes are committed locally in $AUR_DIR"
+    exit 0
+fi
+
+# Push to AUR
+print_msg "$BLUE" "📤 Pushing to AUR..."
+git push origin master
+cd - > /dev/null
+
+print_msg "$GREEN" "═══════════════════════════════════════════════════════"
+print_msg "$GREEN" "✓ Successfully published to AUR!"
+print_msg "$GREEN" "═══════════════════════════════════════════════════════"
+echo ""
+print_msg "$BLUE" "Package URL: https://aur.archlinux.org/packages/obsbot-camera-control"
+echo ""
+print_msg "$YELLOW" "Don't forget to push your main repository changes:"
+print_msg "$NC" "  git push origin main"
+print_msg "$NC" "  git push --tags"
+echo ""
