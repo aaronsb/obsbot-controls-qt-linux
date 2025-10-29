@@ -8,10 +8,13 @@ PTZControlWidget::PTZControlWidget(CameraController *controller, QWidget *parent
     , m_controller(controller)
 {
     QVBoxLayout *layout = new QVBoxLayout(this);
-    layout->setContentsMargins(0, 0, 0, 0);
+    layout->setContentsMargins(8, 14, 8, 14);
+    layout->setSpacing(14);
 
     QGroupBox *groupBox = new QGroupBox("Pan/Tilt/Zoom Controls", this);
     QVBoxLayout *groupLayout = new QVBoxLayout(groupBox);
+    groupLayout->setContentsMargins(16, 16, 16, 16);
+    groupLayout->setSpacing(12);
 
     // Pan/Tilt buttons in a grid
     QGridLayout *panTiltGrid = new QGridLayout();
@@ -76,7 +79,8 @@ PTZControlWidget::PTZControlWidget(CameraController *controller, QWidget *parent
     // Presets section
     QGroupBox *presetGroup = new QGroupBox("PTZ Presets", this);
     QVBoxLayout *presetLayout = new QVBoxLayout(presetGroup);
-    presetLayout->setSpacing(6);
+    presetLayout->setContentsMargins(16, 16, 16, 16);
+    presetLayout->setSpacing(8);
 
     for (int i = 0; i < 3; ++i) {
         PresetUi presetUi{};
@@ -88,7 +92,7 @@ PTZControlWidget::PTZControlWidget(CameraController *controller, QWidget *parent
         QHBoxLayout *row = new QHBoxLayout();
         row->setSpacing(8);
         QLabel *titleLabel = new QLabel(QString("Preset %1").arg(i + 1), this);
-        titleLabel->setStyleSheet("font-weight: bold; font-size: 11px;");
+        titleLabel->setStyleSheet("font-weight: 600; font-size: 11px;");
         row->addWidget(titleLabel);
 
         presetUi.statusLabel = new QLabel("Empty", this);
@@ -114,6 +118,7 @@ PTZControlWidget::PTZControlWidget(CameraController *controller, QWidget *parent
     groupLayout->addWidget(presetGroup);
 
     layout->addWidget(groupBox);
+    layout->addStretch();
 }
 // 1.0 moves Tiny Lite 4K too much for fine control; updated to .05 to give finer control of PTZ adjustments
 void PTZControlWidget::onPanLeftClicked()

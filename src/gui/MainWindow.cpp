@@ -1,9 +1,10 @@
 #include "MainWindow.h"
+#include "PreviewWindow.h"
+
 #include <QMessageBox>
 #include <QWidget>
 #include <QIcon>
 #include <QEvent>
-#include <QResizeEvent>
 #include <QWindowStateChangeEvent>
 #include <QApplication>
 #include <QCoreApplication>
@@ -13,12 +14,26 @@
 #include <QMediaDevices>
 #include <QCameraDevice>
 #include <QCloseEvent>
+#include <QFrame>
+#include <QStyle>
+#include <QSplitter>
+#include <QStackedWidget>
+#include <QTabWidget>
+#include <QSpacerItem>
+#include <QSizePolicy>
+#include <QList>
 #include <iostream>
+#include <array>
+#include <algorithm>
 
 MainWindow::MainWindow(QWidget *parent)
     : QMainWindow(parent)
-    , m_previewAspectRatio(16.0 / 9.0)  // Default to 16:9
     , m_previewStateBeforeMinimize(false)
+    , m_previewDetached(false)
+    , m_widthLocked(false)
+    , m_dockedMinWidth(0)
+    , m_previewCardMinWidth(0)
+    , m_previewCardMaxWidth(QWIDGETSIZE_MAX)
 {
     setWindowTitle("OBSBOT Control");
     setWindowIcon(QIcon(":/icons/camera.svg"));
@@ -73,79 +88,462 @@ void MainWindow::setupUI()
     setCentralWidget(centralWidget);
 
     m_mainLayout = new QHBoxLayout(centralWidget);
-    m_mainLayout->setContentsMargins(0, 0, 0, 0);
-    m_mainLayout->setSpacing(0);
-    m_mainLayout->setSizeConstraint(QLayout::SetFixedSize);
+    m_mainLayout->setContentsMargins(16, 16, 16, 16);
+    m_mainLayout->setSpacing(16);
 
-    // Left: Preview drawer (collapsible, starts hidden, not in layout initially)
-    m_previewWidget = new CameraPreviewWidget(this);
-    m_previewWidget->setVisible(false);
-    connect(m_previewWidget, &CameraPreviewWidget::aspectRatioChanged,
-            this, &MainWindow::onPreviewAspectRatioChanged);
+    m_splitter = new QSplitter(Qt::Horizontal, centralWidget);
+    m_splitter->setChildrenCollapsible(false);
+    m_splitter->setHandleWidth(10);
+    m_mainLayout->addWidget(m_splitter);
+
+    // Preview column
+    m_previewCard = new QFrame(m_splitter);
+    m_previewCard->setObjectName("previewCard");
+    m_previewCard->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Expanding);
+    m_previewCard->setMinimumWidth(520);
+    QVBoxLayout *previewLayout = new QVBoxLayout(m_previewCard);
+    previewLayout->setContentsMargins(16, 16, 16, 16);
+    previewLayout->setSpacing(12);
+
+    QHBoxLayout *previewHeader = new QHBoxLayout();
+    previewHeader->setContentsMargins(0, 0, 0, 0);
+    previewHeader->setSpacing(8);
+
+    QLabel *previewTitle = new QLabel(tr("Live Preview"), m_previewCard);
+    previewTitle->setObjectName("previewTitle");
+    previewHeader->addWidget(previewTitle);
+    previewHeader->addStretch();
+
+    m_detachPreviewButton = new QPushButton(tr("Pop Out Preview"), m_previewCard);
+    m_detachPreviewButton->setObjectName("detachButton");
+    m_detachPreviewButton->setCheckable(true);
+    m_detachPreviewButton->setEnabled(false);
+    connect(m_detachPreviewButton, &QPushButton::toggled,
+            this, &MainWindow::onDetachPreviewToggled);
+    previewHeader->addWidget(m_detachPreviewButton);
+    previewLayout->addLayout(previewHeader);
+
+    m_previewStack = new QStackedWidget(m_previewCard);
+    m_previewStack->setObjectName("previewStack");
+    previewLayout->addWidget(m_previewStack, 1);
+
+    m_previewWidget = new CameraPreviewWidget();
+    m_previewWidget->setControlsVisible(true);
+    m_previewWidget->setMinimumSize(320, 240);
+    m_previewStack->addWidget(m_previewWidget);
+
+    m_previewPlaceholder = new QLabel(tr("Preview not active.\nUse \"Start Preview\" to view the camera."), m_previewCard);
+    m_previewPlaceholder->setObjectName("previewPlaceholder");
+    m_previewPlaceholder->setAlignment(Qt::AlignCenter);
+    m_previewPlaceholder->setWordWrap(true);
+    m_previewPlaceholder->setMinimumHeight(240);
+    m_previewStack->addWidget(m_previewPlaceholder);
+    m_previewStack->setCurrentWidget(m_previewPlaceholder);
+
+    // Control column
+    m_controlCard = new QFrame(m_splitter);
+    m_controlCard->setObjectName("controlCard");
+    m_controlCard->setSizePolicy(QSizePolicy::Fixed, QSizePolicy::Expanding);
+    m_controlCard->setMinimumWidth(360);
+    m_controlCard->setMaximumWidth(420);
+
+    QVBoxLayout *controlLayout = new QVBoxLayout(m_controlCard);
+    controlLayout->setContentsMargins(18, 20, 18, 20);
+    controlLayout->setSpacing(18);
+
+    m_statusBanner = new QFrame(m_controlCard);
+    m_statusBanner->setObjectName("statusBanner");
+    m_statusBanner->setProperty("state", "disconnected");
+    QVBoxLayout *statusLayout = new QVBoxLayout(m_statusBanner);
+    statusLayout->setContentsMargins(16, 18, 16, 16);
+    statusLayout->setSpacing(10);
+
+    QHBoxLayout *statusHeader = new QHBoxLayout();
+    statusHeader->setContentsMargins(0, 0, 0, 0);
+    statusHeader->setSpacing(10);
+    m_statusChip = new QLabel(tr("Camera • Offline"), m_statusBanner);
+    m_statusChip->setObjectName("statusChip");
+    statusHeader->addWidget(m_statusChip);
+    statusHeader->addStretch();
+    statusLayout->addLayout(statusHeader);
+
+    m_deviceInfoLabel = new QLabel(tr("Connecting to camera..."), m_statusBanner);
+    m_deviceInfoLabel->setObjectName("deviceInfoLabel");
+    m_deviceInfoLabel->setWordWrap(true);
+    statusLayout->addWidget(m_deviceInfoLabel);
+
+    m_cameraWarningLabel = new QLabel(QString(), m_statusBanner);
+    m_cameraWarningLabel->setObjectName("warningLabel");
+    m_cameraWarningLabel->setWordWrap(true);
+    m_cameraWarningLabel->setVisible(false);
+    statusLayout->addWidget(m_cameraWarningLabel);
+
+    controlLayout->addWidget(m_statusBanner);
+
+    QWidget *actionRow = new QWidget(m_controlCard);
+    actionRow->setObjectName("actionRow");
+    QHBoxLayout *actionLayout = new QHBoxLayout(actionRow);
+    actionLayout->setContentsMargins(0, 0, 0, 0);
+    actionLayout->setSpacing(14);
+
+    m_previewToggleButton = new QPushButton(tr("Start Preview"), actionRow);
+    m_previewToggleButton->setObjectName("primaryAction");
+    m_previewToggleButton->setCheckable(true);
+    connect(m_previewToggleButton, &QPushButton::toggled,
+            this, &MainWindow::onTogglePreview);
+    actionLayout->addWidget(m_previewToggleButton, 1);
+
+    m_reconnectButton = new QPushButton(tr("Reconnect"), actionRow);
+    m_reconnectButton->setObjectName("secondaryAction");
+    connect(m_reconnectButton, &QPushButton::clicked, this, [this]() {
+        m_controller->disconnectFromCamera();
+        m_controller->connectToCamera();
+    });
+    actionLayout->addWidget(m_reconnectButton);
+
+    controlLayout->addWidget(actionRow);
+
+    m_trackingWidget = new TrackingControlWidget(m_controller, this);
+    m_ptzWidget = new PTZControlWidget(m_controller, this);
+    m_settingsWidget = new CameraSettingsWidget(m_controller, this);
+
+    m_tabWidget = new QTabWidget(m_controlCard);
+    m_tabWidget->setObjectName("controlTabs");
+    m_tabWidget->setDocumentMode(true);
+    m_tabWidget->addTab(m_trackingWidget, tr("Tracking"));
+    m_tabWidget->addTab(m_ptzWidget, tr("Presets"));
+    m_tabWidget->addTab(m_settingsWidget, tr("Image"));
+    controlLayout->addWidget(m_tabWidget, 1);
+
+    m_startMinimizedCheckbox = new QCheckBox(tr("Launch minimized / Close to tray"), m_controlCard);
+    m_startMinimizedCheckbox->setObjectName("footerCheckbox");
+    connect(m_startMinimizedCheckbox, &QCheckBox::toggled,
+            this, &MainWindow::onStartMinimizedToggled);
+    controlLayout->addWidget(m_startMinimizedCheckbox);
+
+    m_statusLabel = new QLabel(tr("Status: Initializing..."), m_controlCard);
+    m_statusLabel->setObjectName("footerStatus");
+    m_statusLabel->setWordWrap(true);
+    controlLayout->addWidget(m_statusLabel);
+
+    m_splitter->addWidget(m_previewCard);
+    m_splitter->addWidget(m_controlCard);
+    m_splitter->setStretchFactor(0, 3);
+    m_splitter->setStretchFactor(1, 2);
+
+    // Detached preview window
+    m_previewWindow = new PreviewWindow(this);
+    m_previewWindow->hide();
+    connect(m_previewWindow, &PreviewWindow::previewClosed,
+            this, &MainWindow::onPreviewWindowClosed);
+
     connect(m_previewWidget, &CameraPreviewWidget::previewStarted,
             this, &MainWindow::onPreviewStarted);
     connect(m_previewWidget, &CameraPreviewWidget::previewFailed,
             this, &MainWindow::onPreviewFailed);
     connect(m_previewWidget, &CameraPreviewWidget::preferredFormatChanged,
             this, &MainWindow::onPreviewFormatChanged);
-    // Don't add to layout yet - will be added when preview is enabled
 
-    // Right: Controls sidebar (auto-sizes to content)
-    m_sidebar = new QWidget(this);
-    QVBoxLayout *sidebarLayout = new QVBoxLayout(m_sidebar);
-    sidebarLayout->setContentsMargins(10, 10, 10, 10);
-    sidebarLayout->setSpacing(10);
+    applyModernStyle();
+    updateStatusBanner(false);
+    updatePreviewControls();
 
-    // Preview toggle button
-    m_previewToggleButton = new QPushButton("Show Camera Preview", this);
-    m_previewToggleButton->setCheckable(true);
-    connect(m_previewToggleButton, &QPushButton::toggled, this, &MainWindow::onTogglePreview);
-    sidebarLayout->addWidget(m_previewToggleButton);
+    m_previewCardMinWidth = m_previewCard->minimumWidth();
+    m_previewCardMaxWidth = m_previewCard->maximumWidth();
+    m_dockedMinWidth = sizeHint().width();
+    setMinimumWidth(m_dockedMinWidth);
+    setMaximumWidth(QWIDGETSIZE_MAX);
 
-    // Device info
-    m_deviceInfoLabel = new QLabel("Connecting to camera...", this);
-    m_deviceInfoLabel->setStyleSheet("font-weight: bold; padding: 5px 0px;");
-    m_deviceInfoLabel->setWordWrap(true);
-    sidebarLayout->addWidget(m_deviceInfoLabel);
+    const int desiredWidth = 1600;
+    const int desiredHeight = 900;
+    const int width = std::max(m_dockedMinWidth, desiredWidth);
+    const int height = std::max(sizeHint().height(), desiredHeight);
+    resize(width, height);
+}
 
-    // Camera warning (for "camera in use" messages)
-    m_cameraWarningLabel = new QLabel("", this);
-    m_cameraWarningLabel->setStyleSheet("font-weight: bold; padding: 5px 0px; color: #FFA500;");  // Orange color
-    m_cameraWarningLabel->setWordWrap(true);
-    m_cameraWarningLabel->setVisible(false);
-    sidebarLayout->addWidget(m_cameraWarningLabel);
+void MainWindow::applyModernStyle()
+{
+    const QString style = QStringLiteral(R"(
+        QFrame#previewCard, QFrame#controlCard {
+            background-color: palette(base);
+            border-radius: 18px;
+            border: 1px solid rgba(0, 0, 0, 72);
+        }
+        QFrame#statusBanner {
+            border-radius: 12px;
+            border: 1px solid rgba(255, 255, 255, 20);
+            background-color: rgba(255, 255, 255, 10);
+        }
+        QFrame#statusBanner[state="connected"] {
+            background-color: rgba(46, 204, 113, 41);
+            border: 1px solid rgba(46, 204, 113, 89);
+        }
+        QFrame#statusBanner[state="disconnected"] {
+            background-color: rgba(231, 76, 60, 36);
+            border: 1px solid rgba(231, 76, 60, 82);
+        }
+        QLabel#deviceInfoLabel {
+            font-weight: 600;
+        }
+        QLabel#statusChip {
+            padding: 6px 12px;
+            border-radius: 14px;
+            background-color: rgba(255, 255, 255, 38);
+            font-weight: 600;
+            letter-spacing: 0.3px;
+        }
+        QFrame#statusBanner[state="connected"] QLabel#statusChip {
+            background-color: rgba(46, 204, 113, 41);
+            color: #1e8449;
+        }
+        QFrame#statusBanner[state="disconnected"] QLabel#statusChip {
+            background-color: rgba(231, 76, 60, 36);
+            color: #943126;
+        }
+        QLabel#warningLabel {
+            color: #F39C12;
+            font-weight: 600;
+        }
+        QLabel#previewTitle {
+            font-size: 16px;
+            font-weight: 600;
+        }
+        QLabel#previewPlaceholder {
+            color: palette(mid);
+            border: 1px dashed rgba(255, 255, 255, 38);
+            border-radius: 12px;
+            padding: 28px;
+        }
+        QPushButton {
+            background-color: rgba(255, 255, 255, 15);
+            border: none;
+            padding: 10px 14px;
+            border-radius: 10px;
+            font-weight: 500;
+            color: palette(windowText);
+        }
+        QPushButton:hover {
+            background-color: rgba(255, 255, 255, 31);
+        }
+        QPushButton:pressed {
+            background-color: rgba(255, 255, 255, 46);
+        }
+        QPushButton#primaryAction {
+            background-color: #2ECC71;
+            color: white;
+        }
+        QPushButton#primaryAction:hover {
+            background-color: #29b765;
+        }
+        QPushButton#primaryAction:checked {
+            background-color: #E74C3C;
+        }
+        QPushButton#primaryAction:checked:hover {
+            background-color: #cf4436;
+        }
+        QPushButton#detachButton:checked {
+            background-color: rgba(52, 152, 219, 64);
+            color: #3498DB;
+        }
+        QPushButton#secondaryAction {
+            background-color: rgba(255, 255, 255, 20);
+        }
+        QPushButton#secondaryAction:hover {
+            background-color: rgba(255, 255, 255, 38);
+        }
+        QComboBox {
+            border: 1px solid rgba(255, 255, 255, 36);
+            border-radius: 10px;
+            padding: 6px 10px;
+            background-color: rgba(255, 255, 255, 12);
+            color: palette(windowText);
+        }
+        QComboBox::drop-down {
+            width: 26px;
+            border: none;
+        }
+        QComboBox QAbstractItemView {
+            background-color: palette(base);
+            border: 1px solid rgba(255, 255, 255, 28);
+            selection-background-color: rgba(52, 152, 219, 72);
+            selection-color: white;
+        }
+        QGroupBox {
+            border: 1px solid rgba(255, 255, 255, 26);
+            border-radius: 14px;
+            margin-top: 14px;
+        }
+        QGroupBox::title {
+            subcontrol-origin: margin;
+            left: 18px;
+            top: -2px;
+            padding: 0 8px;
+            font-weight: 600;
+            background-color: palette(window);
+        }
+        QTabWidget#controlTabs::pane {
+            border: none;
+            margin-top: 18px;
+        }
+        QTabWidget#controlTabs::tab-bar {
+            alignment: center;
+        }
+        QTabBar::tab {
+            min-width: 110px;
+            padding: 8px 12px;
+            margin: 0 4px;
+            border-radius: 8px;
+            background-color: rgba(255, 255, 255, 13);
+        }
+        QTabBar::tab:selected {
+            background-color: rgba(52, 152, 219, 71);
+            color: white;
+            font-weight: 600;
+        }
+        QLabel#footerStatus {
+            color: rgba(255, 255, 255, 153);
+        }
+        QCheckBox#footerCheckbox {
+            color: rgba(255, 255, 255, 166);
+        }
+    )");
 
-    // Create all control widgets (always visible)
-    m_trackingWidget = new TrackingControlWidget(m_controller, this);
-    m_ptzWidget = new PTZControlWidget(m_controller, this);
-    m_settingsWidget = new CameraSettingsWidget(m_controller, this);
+    setStyleSheet(style);
+}
 
-    sidebarLayout->addWidget(m_trackingWidget);
-    sidebarLayout->addWidget(m_ptzWidget);
-    sidebarLayout->addWidget(m_settingsWidget);
-    sidebarLayout->addStretch();
+void MainWindow::detachPreviewToWindow()
+{
+    if (m_previewDetached) {
+        return;
+    }
 
-    // Application settings
-    m_startMinimizedCheckbox = new QCheckBox("Launch minimized / Close to tray", this);
-    m_startMinimizedCheckbox->setStyleSheet("padding: 5px; font-size: 11px;");
-    connect(m_startMinimizedCheckbox, &QCheckBox::toggled, this, &MainWindow::onStartMinimizedToggled);
-    sidebarLayout->addWidget(m_startMinimizedCheckbox);
+    if (m_previewStack->indexOf(m_previewWidget) != -1) {
+        m_previewStack->removeWidget(m_previewWidget);
+    }
 
-    // Bottom: Status bar
-    m_statusLabel = new QLabel("Status: Initializing...", this);
-    m_statusLabel->setStyleSheet("padding: 10px; font-size: 11px; border-top: 1px solid palette(mid);");
-    m_statusLabel->setWordWrap(true);
-    sidebarLayout->addWidget(m_statusLabel);
+    m_previewWidget->setControlsVisible(false);
+    m_previewWidget->setParent(nullptr);
+    m_previewWindow->setPreviewWidget(m_previewWidget);
+    m_previewWidget->show();
+    m_previewWindow->show();
+    m_previewWindow->raise();
+    m_previewWindow->activateWindow();
 
-    // Set sidebar to natural size based on content
-    m_sidebar->setSizePolicy(QSizePolicy::Minimum, QSizePolicy::Preferred);
+    m_previewStack->setCurrentWidget(m_previewPlaceholder);
+    m_previewCard->setMinimumWidth(0);
+    m_previewCard->setMaximumWidth(0);
+    m_previewCard->hide();
+    QList<int> sizes;
+    sizes << 0 << m_controlCard->sizeHint().width();
+    m_splitter->setSizes(sizes);
 
-    m_mainLayout->addWidget(m_sidebar, 0);  // No stretch, sizes to content
+    const int margins = m_mainLayout->contentsMargins().left() + m_mainLayout->contentsMargins().right();
+    const int targetWidth = margins + m_controlCard->sizeHint().width() + m_splitter->handleWidth();
+    setMinimumWidth(targetWidth);
+    setMaximumWidth(targetWidth);
+    resize(targetWidth, height());
+    m_widthLocked = true;
+    m_previewDetached = true;
+}
+
+void MainWindow::attachPreviewToPanel()
+{
+    if (!m_previewDetached) {
+        m_previewCard->setMinimumWidth(m_previewCardMinWidth);
+        m_previewCard->setMaximumWidth(m_previewCardMaxWidth);
+        m_previewCard->show();
+        if (m_widthLocked) {
+            m_widthLocked = false;
+            setMinimumWidth(m_dockedMinWidth);
+            setMaximumWidth(QWIDGETSIZE_MAX);
+            resize(std::max(width(), m_dockedMinWidth), height());
+        }
+        if (m_previewStack->indexOf(m_previewWidget) == -1) {
+            m_previewStack->insertWidget(0, m_previewWidget);
+        }
+        return;
+    }
+
+    CameraPreviewWidget *widget = m_previewWindow->takePreviewWidget();
+    if (!widget) {
+        widget = m_previewWidget;
+    }
+
+    if (m_previewStack->indexOf(widget) == -1) {
+        m_previewStack->insertWidget(0, widget);
+    }
+    widget->setParent(m_previewStack);
+    widget->show();
+    widget->setControlsVisible(true);
+    m_previewWidget = widget;
+
+    m_previewCard->setMinimumWidth(m_previewCardMinWidth);
+    m_previewCard->setMaximumWidth(m_previewCardMaxWidth);
+    m_previewCard->show();
+    QList<int> sizes;
+    sizes << m_previewCardMinWidth + 40 << m_controlCard->sizeHint().width();
+    m_splitter->setSizes(sizes);
+
+    if (m_previewToggleButton->isChecked()) {
+        m_previewStack->setCurrentWidget(widget);
+    } else {
+        m_previewStack->setCurrentWidget(m_previewPlaceholder);
+    }
+
+    if (m_widthLocked) {
+        m_widthLocked = false;
+        setMinimumWidth(m_dockedMinWidth);
+        setMaximumWidth(QWIDGETSIZE_MAX);
+        resize(std::max(width(), m_dockedMinWidth), height());
+    }
+
+    m_previewDetached = false;
+}
+
+void MainWindow::updatePreviewControls()
+{
+    const bool previewActive = m_previewToggleButton->isChecked();
+    if (!previewActive) {
+        if (m_previewDetached) {
+            attachPreviewToPanel();
+        }
+        if (m_detachPreviewButton->isChecked()) {
+            m_detachPreviewButton->blockSignals(true);
+            m_detachPreviewButton->setChecked(false);
+            m_detachPreviewButton->blockSignals(false);
+        }
+        m_detachPreviewButton->setEnabled(false);
+        m_detachPreviewButton->setText(tr("Pop Out Preview"));
+        m_previewToggleButton->setText(tr("Start Preview"));
+    } else {
+        m_detachPreviewButton->setEnabled(true);
+        if (m_detachPreviewButton->isChecked() != m_previewDetached) {
+            m_detachPreviewButton->blockSignals(true);
+            m_detachPreviewButton->setChecked(m_previewDetached);
+            m_detachPreviewButton->blockSignals(false);
+        }
+        m_detachPreviewButton->setText(m_previewDetached
+            ? tr("Attach Preview")
+            : tr("Pop Out Preview"));
+        m_previewToggleButton->setText(tr("Stop Preview"));
+    }
+}
+
+void MainWindow::updateStatusBanner(bool connected)
+{
+    m_statusBanner->setProperty("state", connected ? "connected" : "disconnected");
+    m_statusChip->setText(connected ? tr("Camera • Online") : tr("Camera • Offline"));
+    m_statusBanner->style()->unpolish(m_statusBanner);
+    m_statusBanner->style()->polish(m_statusBanner);
+    m_statusBanner->update();
 }
 
 void MainWindow::onTogglePreview(bool enabled)
 {
     if (enabled) {
+        m_cameraWarningLabel->setVisible(false);
+        m_cameraWarningLabel->setText("");
+
         // Find which video device is the OBSBOT camera
         QString devicePath = findObsbotVideoDevice();
 
@@ -172,46 +570,59 @@ void MainWindow::onTogglePreview(bool enabled)
         }
 
         // Try to enable preview - will emit previewStarted() or previewFailed()
+        m_previewWidget->setCameraDeviceId(devicePath);
         m_previewWidget->enablePreview(true);
 
+        if (!m_previewDetached) {
+            if (m_previewStack->indexOf(m_previewWidget) == -1) {
+                m_previewStack->insertWidget(0, m_previewWidget);
+            }
+            m_previewStack->setCurrentWidget(m_previewWidget);
+        } else {
+            m_previewWindow->setPreviewWidget(m_previewWidget);
+            m_previewWindow->show();
+            m_previewWindow->raise();
+            m_previewWindow->activateWindow();
+        }
+
     } else {
+        attachPreviewToPanel();
         m_previewWidget->enablePreview(false);
-        m_previewWidget->setVisible(false);
-
-        // Remove widget from layout completely
-        m_mainLayout->removeWidget(m_previewWidget);
-
-        m_previewToggleButton->setText("Show Camera Preview");
-
-        // Force fresh layout calculation as if starting from scratch
-        m_mainLayout->invalidate();
-        m_mainLayout->activate();
-        m_sidebar->updateGeometry();
-        QApplication::processEvents(QEventLoop::ExcludeUserInputEvents);
-
-        // Get actual sidebar width and force window to shrink
-        int sidebarWidth = m_sidebar->sizeHint().width();
-        setMinimumWidth(sidebarWidth);
-        setMaximumWidth(sidebarWidth);
-        resize(sidebarWidth, height());
-
-        // Clear constraints after a moment
-        QTimer::singleShot(100, this, [this]() {
-            setMinimumWidth(0);
-            setMaximumWidth(QWIDGETSIZE_MAX);
-        });
+        m_previewWindow->hide();
+        m_previewStack->setCurrentWidget(m_previewPlaceholder);
     }
+
+    updatePreviewControls();
 }
 
-void MainWindow::onPreviewAspectRatioChanged(double ratio)
+void MainWindow::onDetachPreviewToggled(bool checked)
 {
-    m_previewAspectRatio = ratio;
-
-    // Update preview width if it's currently visible, based on sidebar height
-    if (m_previewWidget->isVisible()) {
-        int previewWidth = static_cast<int>(m_sidebar->height() * m_previewAspectRatio);
-        m_previewWidget->setFixedWidth(previewWidth);
+    if (!m_previewToggleButton->isChecked()) {
+        m_detachPreviewButton->blockSignals(true);
+        m_detachPreviewButton->setChecked(false);
+        m_detachPreviewButton->blockSignals(false);
+        return;
     }
+
+    if (checked) {
+        detachPreviewToWindow();
+    } else {
+        attachPreviewToPanel();
+    }
+
+    updatePreviewControls();
+}
+
+void MainWindow::onPreviewWindowClosed()
+{
+    if (m_previewDetached) {
+        attachPreviewToPanel();
+        if (m_previewToggleButton->isChecked()) {
+            m_previewStack->setCurrentWidget(m_previewWidget);
+        }
+    }
+
+    updatePreviewControls();
 }
 
 void MainWindow::onCameraConnected(const CameraController::CameraInfo &info)
@@ -221,7 +632,9 @@ void MainWindow::onCameraConnected(const CameraController::CameraInfo &info)
         .arg(info.version);
 
     m_deviceInfoLabel->setText(deviceText);
-    m_deviceInfoLabel->setStyleSheet("font-weight: bold; padding: 5px 0px; color: green;");
+    updateStatusBanner(true);
+    m_cameraWarningLabel->setVisible(false);
+    m_cameraWarningLabel->setText("");
 
     // Apply current UI state to camera asynchronously (respects user changes before connection)
     // Use a short delay to let the connection stabilize
@@ -232,26 +645,34 @@ void MainWindow::onCameraConnected(const CameraController::CameraInfo &info)
 
     updateStatus();
 
-    // Recalculate window width if preview is visible
-    // (connection status makes sidebar wider)
-    if (m_previewWidget->isVisible()) {
-        QTimer::singleShot(50, this, [this]() {
-            m_sidebar->updateGeometry();
-            QApplication::processEvents(QEventLoop::ExcludeUserInputEvents);
-
-            int previewWidth = m_previewWidget->width();
-            int sidebarWidth = m_sidebar->sizeHint().width();
-            int totalWidth = previewWidth + sidebarWidth;
-            resize(totalWidth, height());
-        });
+    if (m_previewToggleButton->isChecked()) {
+        if (m_previewDetached) {
+            m_previewWindow->show();
+            m_previewWindow->raise();
+            m_previewWindow->activateWindow();
+        } else {
+            m_previewStack->setCurrentWidget(m_previewWidget);
+        }
     }
 }
 
 void MainWindow::onCameraDisconnected()
 {
     m_deviceInfoLabel->setText("❌ Camera Disconnected");
-    m_deviceInfoLabel->setStyleSheet("font-weight: bold; padding: 10px; color: red;");
+    updateStatusBanner(false);
     m_statusLabel->setText("Status: Not connected");
+    m_cameraWarningLabel->setVisible(false);
+    m_cameraWarningLabel->setText("");
+
+    attachPreviewToPanel();
+    m_previewWindow->hide();
+    m_previewStack->setCurrentWidget(m_previewPlaceholder);
+
+    if (m_previewToggleButton->isChecked()) {
+        m_previewToggleButton->setChecked(false);
+    } else {
+        updatePreviewControls();
+    }
 }
 
 void MainWindow::onStateChanged(const CameraController::CameraState &state)
@@ -395,17 +816,6 @@ CameraController::CameraState MainWindow::getUIState() const
     return state;
 }
 
-void MainWindow::resizeEvent(QResizeEvent *event)
-{
-    QMainWindow::resizeEvent(event);
-
-    // Update preview width when window is manually resized, based on sidebar height
-    if (m_previewWidget->isVisible()) {
-        int previewWidth = static_cast<int>(m_sidebar->height() * m_previewAspectRatio);
-        m_previewWidget->setFixedWidth(previewWidth);
-    }
-}
-
 void MainWindow::changeEvent(QEvent *event)
 {
     QMainWindow::changeEvent(event);
@@ -445,47 +855,26 @@ void MainWindow::changeEvent(QEvent *event)
 
 void MainWindow::onPreviewStarted()
 {
-    // Clear warning when preview successfully starts
     m_cameraWarningLabel->setVisible(false);
     m_cameraWarningLabel->setText("");
 
-    // NOW do the layout expansion (camera successfully opened)
-    // Force fresh layout calculation
-    m_sidebar->updateGeometry();
-    m_mainLayout->invalidate();
-    m_mainLayout->activate();
-    QApplication::processEvents(QEventLoop::ExcludeUserInputEvents);
+    if (m_previewDetached) {
+        m_previewWindow->show();
+        m_previewWindow->raise();
+        m_previewWindow->activateWindow();
+    } else {
+        if (m_previewStack->indexOf(m_previewWidget) == -1) {
+            m_previewStack->insertWidget(0, m_previewWidget);
+        }
+        m_previewStack->setCurrentWidget(m_previewWidget);
+    }
 
-    // Add preview widget to layout (at position 0, before sidebar)
-    m_mainLayout->insertWidget(0, m_previewWidget, 1);  // Stretch factor 1
-
-    // Calculate preview width based on actual sidebar height
-    int previewWidth = static_cast<int>(m_sidebar->height() * m_previewAspectRatio);
-    m_previewWidget->setFixedWidth(previewWidth);
-
-    m_previewWidget->setVisible(true);
-    m_previewToggleButton->setText("Hide Camera Preview");
-
-    // Force layout recalculation after adding preview
-    m_mainLayout->invalidate();
-    m_mainLayout->activate();
-    QApplication::processEvents(QEventLoop::ExcludeUserInputEvents);
-
-    // Expand window to fit preview + sidebar
-    // Use sizeHint() to get intended width, not current width
-    int sidebarWidth = m_sidebar->sizeHint().width();
-    int totalWidth = previewWidth + sidebarWidth;
-    setMinimumWidth(totalWidth);
-    resize(totalWidth, height());
-
-    // Clear constraints after a moment
-    QTimer::singleShot(100, this, [this]() {
-        setMinimumWidth(0);
-    });
+    updatePreviewControls();
 }
 
 void MainWindow::onPreviewFailed(const QString &error)
 {
+    Q_UNUSED(error);
     // Show warning when preview fails
     QString warningText = "⚠ Cannot open camera preview";
 
@@ -500,8 +889,15 @@ void MainWindow::onPreviewFailed(const QString &error)
     m_cameraWarningLabel->setText(warningText);
     m_cameraWarningLabel->setVisible(true);
 
-    // Uncheck the toggle button since preview failed
-    m_previewToggleButton->setChecked(false);
+    attachPreviewToPanel();
+    m_previewWindow->hide();
+    m_previewStack->setCurrentWidget(m_previewPlaceholder);
+
+    if (m_previewToggleButton->isChecked()) {
+        m_previewToggleButton->setChecked(false);
+    } else {
+        updatePreviewControls();
+    }
 }
 
 void MainWindow::onPreviewFormatChanged(const QString &formatId)
@@ -686,6 +1082,9 @@ void MainWindow::closeEvent(QCloseEvent *event)
         // Save config before quitting
         if (m_controller->isConnected()) {
             m_controller->saveConfig();
+        }
+        if (m_previewWidget->isPreviewEnabled()) {
+            m_previewToggleButton->setChecked(false);
         }
         event->accept();
         QApplication::quit();

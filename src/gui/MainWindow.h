@@ -15,10 +15,17 @@
 #include "CameraSettingsWidget.h"
 #include "CameraPreviewWidget.h"
 
+class PreviewWindow;
+class QSplitter;
+class QStackedWidget;
+class QTabWidget;
+class QFrame;
+class QWidget;
+
 /**
  * @brief Main application window
  *
- * Shows all camera controls with optional collapsible preview drawer
+ * Shows all camera controls with an optional detached camera preview window
  */
 class MainWindow : public QMainWindow
 {
@@ -36,7 +43,7 @@ private slots:
     void updateStatus();
     void onStateChangedSaveConfig();
     void onTogglePreview(bool enabled);
-    void onPreviewAspectRatioChanged(double ratio);
+    void onDetachPreviewToggled(bool checked);
     void onPreviewStarted();
     void onPreviewFailed(const QString &error);
     void onPreviewFormatChanged(const QString &formatId);
@@ -44,6 +51,7 @@ private slots:
     void onShowHideAction();
     void onQuitAction();
     void onStartMinimizedToggled(bool checked);
+    void onPreviewWindowClosed();
 
 private:
     void setupUI();
@@ -53,17 +61,31 @@ private:
     CameraController::CameraState getUIState() const;  // Get current UI state
     QString getProcessUsingCamera(const QString &devicePath);  // Detect which process is using camera
     QString findObsbotVideoDevice();  // Find which /dev/video* device is the OBSBOT camera
+    void applyModernStyle();
+    void detachPreviewToWindow();
+    void attachPreviewToPanel();
+    void updatePreviewControls();
+    void updateStatusBanner(bool connected);
 
     // Controller
     CameraController *m_controller;
 
     // UI
     QPushButton *m_previewToggleButton;
+    QPushButton *m_detachPreviewButton;
+    QPushButton *m_reconnectButton;
     QLabel *m_deviceInfoLabel;
     QLabel *m_cameraWarningLabel;  // Warning for camera in use
     QLabel *m_statusLabel;
     QCheckBox *m_startMinimizedCheckbox;
-    QWidget *m_sidebar;
+    QLabel *m_statusChip;
+    QSplitter *m_splitter;
+    QFrame *m_previewCard;
+    QStackedWidget *m_previewStack;
+    QLabel *m_previewPlaceholder;
+    QFrame *m_controlCard;
+    QTabWidget *m_tabWidget;
+    QFrame *m_statusBanner;
     QHBoxLayout *m_mainLayout;
 
     // Control widgets
@@ -71,15 +93,18 @@ private:
     PTZControlWidget *m_ptzWidget;
     CameraSettingsWidget *m_settingsWidget;
     CameraPreviewWidget *m_previewWidget;
+    PreviewWindow *m_previewWindow;
 
     // Status timer
     QTimer *m_statusTimer;
 
-    // Preview aspect ratio (width/height)
-    double m_previewAspectRatio;
-
     // Track preview state before minimize
     bool m_previewStateBeforeMinimize;
+    bool m_previewDetached;
+    bool m_widthLocked;
+    int m_dockedMinWidth;
+    int m_previewCardMinWidth;
+    int m_previewCardMaxWidth;
 
     // System tray
     QSystemTrayIcon *m_trayIcon;
@@ -87,7 +112,6 @@ private:
 
 protected:
     void changeEvent(QEvent *event) override;
-    void resizeEvent(QResizeEvent *event) override;
     void closeEvent(QCloseEvent *event) override;
 };
 

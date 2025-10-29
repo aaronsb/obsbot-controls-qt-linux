@@ -13,31 +13,29 @@ TrackingControlWidget::TrackingControlWidget(CameraController *controller, QWidg
     m_tiny2Capabilities = m_controller->hasTiny2Capabilities();
 
     QVBoxLayout *layout = new QVBoxLayout(this);
-    layout->setContentsMargins(0, 0, 0, 0);
+    layout->setContentsMargins(8, 14, 8, 14);
+    layout->setSpacing(14);
 
     QGroupBox *groupBox = new QGroupBox("Face Tracking", this);
+    groupBox->setFlat(true);
     QVBoxLayout *groupLayout = new QVBoxLayout(groupBox);
-
-    QLabel *descLabel = new QLabel(
-        "Enable automatic face tracking to keep you centered in the frame.", this);
-    descLabel->setWordWrap(true);
-    descLabel->setStyleSheet("font-size: 11px;");
-    groupLayout->addWidget(descLabel);
+    groupLayout->setContentsMargins(16, 16, 16, 16);
+    groupLayout->setSpacing(12);
 
     m_trackingCheckBox = new QCheckBox("Enable Auto-Framing", this);
-    m_trackingCheckBox->setStyleSheet("font-weight: bold; font-size: 14px;");
+    m_trackingCheckBox->setStyleSheet("font-weight: 600; font-size: 14px;");
     connect(m_trackingCheckBox, &QCheckBox::toggled, this, &TrackingControlWidget::onTrackingToggled);
     groupLayout->addWidget(m_trackingCheckBox);
 
     // Advanced controls container (Tiny 2 family)
     m_advancedContainer = new QWidget(this);
     QVBoxLayout *advancedLayout = new QVBoxLayout(m_advancedContainer);
-    advancedLayout->setContentsMargins(0, 8, 0, 0);
-    advancedLayout->setSpacing(6);
+    advancedLayout->setContentsMargins(0, 12, 0, 0);
+    advancedLayout->setSpacing(8);
 
     QHBoxLayout *modeLayout = new QHBoxLayout();
-    QLabel *modeLabel = new QLabel("Tracking Mode:", this);
-    modeLabel->setStyleSheet("font-size: 11px;");
+    QLabel *modeLabel = new QLabel("Tracking Mode", this);
+    modeLabel->setStyleSheet("font-size: 11px; font-weight: 600;");
     m_modeCombo = new QComboBox(this);
     m_modeCombo->setSizeAdjustPolicy(QComboBox::AdjustToContents);
     m_modeCombo->addItem("Off", Device::AiWorkModeNone);
@@ -53,8 +51,8 @@ TrackingControlWidget::TrackingControlWidget(CameraController *controller, QWidg
     advancedLayout->addLayout(modeLayout);
 
     QHBoxLayout *subModeLayout = new QHBoxLayout();
-    QLabel *subModeLabel = new QLabel("Human Sub-Mode:", this);
-    subModeLabel->setStyleSheet("font-size: 11px;");
+    QLabel *subModeLabel = new QLabel("Human Sub-Mode", this);
+    subModeLabel->setStyleSheet("font-size: 11px; font-weight: 600;");
     m_humanSubModeCombo = new QComboBox(this);
     m_humanSubModeCombo->setSizeAdjustPolicy(QComboBox::AdjustToContents);
     m_humanSubModeCombo->addItem("Normal", Device::AiSubModeNormal);
@@ -74,8 +72,8 @@ TrackingControlWidget::TrackingControlWidget(CameraController *controller, QWidg
     advancedLayout->addWidget(m_autoZoomCheckBox);
 
     QHBoxLayout *speedLayout = new QHBoxLayout();
-    QLabel *speedLabel = new QLabel("Tracking Speed:", this);
-    speedLabel->setStyleSheet("font-size: 11px;");
+    QLabel *speedLabel = new QLabel("Tracking Speed", this);
+    speedLabel->setStyleSheet("font-size: 11px; font-weight: 600;");
     m_speedCombo = new QComboBox(this);
     m_speedCombo->setSizeAdjustPolicy(QComboBox::AdjustToContents);
     m_speedCombo->addItem("Lazy", Device::AiTrackSpeedLazy);
@@ -99,6 +97,7 @@ TrackingControlWidget::TrackingControlWidget(CameraController *controller, QWidg
     updateTiny2Visibility();
 
     layout->addWidget(groupBox);
+    layout->addStretch();
 }
 
 void TrackingControlWidget::setAiMode(int mode)

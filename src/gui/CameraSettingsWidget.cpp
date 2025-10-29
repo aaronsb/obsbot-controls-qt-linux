@@ -12,10 +12,13 @@ CameraSettingsWidget::CameraSettingsWidget(CameraController *controller, QWidget
     m_commandTimer = new QTimer(this);
     m_commandTimer->setSingleShot(true);
     QVBoxLayout *layout = new QVBoxLayout(this);
-    layout->setContentsMargins(0, 0, 0, 0);
+    layout->setContentsMargins(8, 14, 8, 14);
+    layout->setSpacing(14);
 
     QGroupBox *groupBox = new QGroupBox("Advanced Camera Settings", this);
     QVBoxLayout *groupLayout = new QVBoxLayout(groupBox);
+    groupLayout->setContentsMargins(16, 16, 16, 16);
+    groupLayout->setSpacing(10);
 
     // HDR
     m_hdrCheckBox = new QCheckBox("HDR (High Dynamic Range)", this);
@@ -54,6 +57,8 @@ CameraSettingsWidget::CameraSettingsWidget(CameraController *controller, QWidget
     // Image Controls Group
     QGroupBox *imageGroupBox = new QGroupBox("Image Controls", this);
     QVBoxLayout *imageLayout = new QVBoxLayout(imageGroupBox);
+    imageLayout->setContentsMargins(16, 16, 16, 16);
+    imageLayout->setSpacing(10);
 
     // Brightness
     QHBoxLayout *brightnessLayout = new QHBoxLayout();
@@ -117,6 +122,7 @@ CameraSettingsWidget::CameraSettingsWidget(CameraController *controller, QWidget
     imageLayout->addLayout(wbLayout);
 
     layout->addWidget(imageGroupBox);
+    layout->addStretch();
 }
 
 void CameraSettingsWidget::onHDRToggled(bool checked)

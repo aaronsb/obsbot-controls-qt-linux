@@ -30,6 +30,8 @@ add_executable(obsbot-gui
     src/gui/CameraSettingsWidget.h
     src/gui/CameraPreviewWidget.cpp
     src/gui/CameraPreviewWidget.h
+    src/gui/PreviewWindow.cpp
+    src/gui/PreviewWindow.h
     src/common/Config.cpp
     src/common/Config.h
     resources/resources.qrc
