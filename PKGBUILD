@@ -1,4 +1,4 @@
-# Maintainer: Aaron Bockelie <aaron@bockelie.com>
+# Maintainer: Aaron Bockelie <aaronsb@gmail.com>
 pkgname=obsbot-camera-control
 pkgver=0.2.0
 pkgrel=1
