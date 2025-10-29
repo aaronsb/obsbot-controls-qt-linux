@@ -240,6 +240,8 @@ void MainWindow::setupUI()
     m_trackingWidget = new TrackingControlWidget(m_controller, this);
     m_ptzWidget = new PTZControlWidget(m_controller, this);
     m_settingsWidget = new CameraSettingsWidget(m_controller, this);
+    connect(m_ptzWidget, &PTZControlWidget::presetUpdated,
+            this, &MainWindow::onPresetUpdated);
 
     m_tabWidget = new QTabWidget(m_controlCard);
     m_tabWidget->setObjectName("controlTabs");
@@ -866,6 +868,11 @@ void MainWindow::loadConfiguration()
     // Initialize UI widgets from config
     auto settings = m_controller->getConfig().getSettings();
     m_trackingWidget->setTrackingEnabled(settings.faceTracking);
+    m_trackingWidget->setAiMode(settings.aiMode);
+    m_trackingWidget->setHumanSubMode(settings.aiSubMode);
+    m_trackingWidget->setAutoZoomEnabled(settings.autoZoom);
+    m_trackingWidget->setTrackSpeed(settings.trackSpeed);
+    m_trackingWidget->setAudioAutoGain(settings.audioAutoGain);
     m_settingsWidget->setHDREnabled(settings.hdr);
     m_settingsWidget->setFOVMode(settings.fov);
     m_settingsWidget->setFaceAEEnabled(settings.faceAE);
@@ -880,6 +887,18 @@ void MainWindow::loadConfiguration()
     m_settingsWidget->setSaturation(settings.saturation);
     m_settingsWidget->setWhiteBalance(settings.whiteBalance);
     m_previewWidget->setPreferredFormatId(QString::fromStdString(settings.previewFormat));
+
+    std::array<PTZControlWidget::PresetState, 3> presetStates{};
+    for (int i = 0; i < 3; ++i) {
+        const auto &preset = settings.presets[static_cast<size_t>(i)];
+        presetStates[static_cast<size_t>(i)] = {
+            preset.defined,
+            preset.pan,
+            preset.tilt,
+            preset.zoom
+        };
+    }
+    m_ptzWidget->applyPresetStates(presetStates);
 
     // Application settings - block signals to prevent saving during initialization
     m_startMinimizedCheckbox->blockSignals(true);
@@ -941,6 +960,11 @@ CameraController::CameraState MainWindow::getUIState() const
 
     // Get state from widgets
     state.autoFramingEnabled = m_trackingWidget->isTrackingEnabled();
+    state.aiMode = m_trackingWidget->currentAiMode();
+    state.aiSubMode = m_trackingWidget->currentHumanSubMode();
+    state.autoZoomEnabled = m_trackingWidget->isAutoZoomEnabled();
+    state.trackSpeedMode = m_trackingWidget->currentTrackSpeed();
+    state.audioAutoGainEnabled = m_trackingWidget->isAudioAutoGainEnabled();
     state.hdrEnabled = m_settingsWidget->isHDREnabled();
     state.fovMode = m_settingsWidget->getFOVMode();
     state.faceAEEnabled = m_settingsWidget->isFaceAEEnabled();
@@ -1052,6 +1076,23 @@ void MainWindow::onPreviewFormatChanged(const QString &formatId)
 {
     auto settings = m_controller->getConfig().getSettings();
     settings.previewFormat = formatId.toStdString();
+    m_controller->getConfig().setSettings(settings);
+    m_controller->saveConfig();
+}
+
+void MainWindow::onPresetUpdated(int index, double pan, double tilt, double zoom, bool defined)
+{
+    auto settings = m_controller->getConfig().getSettings();
+    if (index < 0 || index >= static_cast<int>(settings.presets.size())) {
+        return;
+    }
+
+    auto &preset = settings.presets[static_cast<size_t>(index)];
+    preset.defined = defined;
+    preset.pan = pan;
+    preset.tilt = tilt;
+    preset.zoom = zoom;
+
     m_controller->getConfig().setSettings(settings);
     m_controller->saveConfig();
 }
