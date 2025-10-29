@@ -85,6 +85,7 @@ void CameraPreviewWidget::setupUI()
     layout->setSpacing(6);
 
     m_controlRow = new QWidget(this);
+    m_controlRow->setObjectName("controlRow");
     QHBoxLayout *controlLayout = new QHBoxLayout(m_controlRow);
     controlLayout->setContentsMargins(0, 0, 0, 0);
     controlLayout->setSpacing(8);

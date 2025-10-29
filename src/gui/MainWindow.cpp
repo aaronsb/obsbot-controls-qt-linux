@@ -176,6 +176,15 @@ void MainWindow::setupUI()
     m_previewWidget->setVirtualCameraStreamer(m_virtualCameraStreamer);
     m_previewWidget->setControlsVisible(true);
     m_previewWidget->setMinimumSize(320, 240);
+
+    // Move the preview widget's control row into the header for compact layout
+    QWidget *controlRow = m_previewWidget->findChild<QWidget*>("controlRow");
+    if (controlRow) {
+        // Insert after the title and spacing, before the stretch
+        previewHeader->insertWidget(2, controlRow);
+        previewHeader->insertSpacing(2, 16);
+    }
+
     m_previewStack->addWidget(m_previewWidget);
 
     m_previewPlaceholder = new QLabel(tr("Preview not active.\nUse \"Start Preview\" to view the camera."), m_previewCard);
@@ -449,72 +458,8 @@ void MainWindow::applyModernStyle()
             border-radius: 12px;
             padding: 28px;
         }
-        QPushButton {
-            background-color: %14;
-            border: none;
-            padding: 10px 14px;
-            border-radius: 10px;
-            font-weight: 500;
-            color: %15;
-        }
-        QPushButton:hover {
-            background-color: %16;
-        }
-        QPushButton:pressed {
-            background-color: %17;
-        }
-        QPushButton#primaryAction {
-            background-color: %18;
-            color: %19;
-        }
-        QPushButton#primaryAction:hover {
-            background-color: %20;
-        }
-        QPushButton#primaryAction:checked {
-            background-color: %21;
-        }
-        QPushButton#primaryAction:checked:hover {
-            background-color: %22;
-        }
-        QPushButton#detachButton:checked {
-            background-color: %23;
-            color: %24;
-        }
-        QPushButton#secondaryAction {
-            background-color: %25;
-        }
-        QPushButton#secondaryAction:hover {
-            background-color: %26;
-        }
-        QComboBox {
-            border: 1px solid %27;
-            border-radius: 10px;
-            padding: 6px 10px;
-            background-color: %28;
-            color: %15;
-        }
-        QComboBox::drop-down {
-            width: 26px;
-            border: none;
-        }
-        QComboBox QAbstractItemView {
-            background-color: %29;
-            border: 1px solid %30;
-            selection-background-color: %31;
-            selection-color: %32;
-        }
-        QLineEdit {
-            border: 1px solid %27;
-            border-radius: 10px;
-            padding: 6px 10px;
-            background-color: %28;
-            color: %15;
-        }
-        QLineEdit:focus {
-            border: 1px solid %31;
-        }
         QGroupBox {
-            border: 1px solid %33;
+            border: 1px solid %14;
             border-radius: 14px;
             margin-top: 14px;
         }
@@ -534,22 +479,18 @@ void MainWindow::applyModernStyle()
             alignment: center;
         }
         QTabBar::tab {
-            min-width: 110px;
-            padding: 8px 12px;
-            margin: 0 4px;
-            border-radius: 8px;
-            background-color: %34;
+            padding: 6px 10px;
+            margin: 0 2px;
+            font-size: 13px;
         }
         QTabBar::tab:selected {
-            background-color: %31;
-            color: %32;
             font-weight: 600;
         }
         QLabel#footerStatus {
-            color: %35;
+            color: %15;
         }
         QCheckBox#footerCheckbox {
-            color: %36;
+            color: %16;
         }
     )")
         .arg(toCssColor(cardBackground))
@@ -565,27 +506,7 @@ void MainWindow::applyModernStyle()
         .arg(toCssColor(warningColor))
         .arg(toCssColor(previewPlaceholderText))
         .arg(toCssColor(previewPlaceholderBorder))
-        .arg(toCssColor(buttonBase))
-        .arg(toCssColor(buttonTextColor))
-        .arg(toCssColor(buttonHover))
-        .arg(toCssColor(buttonPressed))
-        .arg(toCssColor(primaryBackground))
-        .arg(toCssColor(primaryText))
-        .arg(toCssColor(primaryHover))
-        .arg(toCssColor(primaryChecked))
-        .arg(toCssColor(primaryCheckedHover))
-        .arg(toCssColor(accentChipBackground))
-        .arg(toCssColor(detachCheckedText))
-        .arg(toCssColor(secondaryBackground))
-        .arg(toCssColor(secondaryHover))
-        .arg(toCssColor(comboBorder))
-        .arg(toCssColor(comboBackground))
-        .arg(toCssColor(comboPopupBackground))
-        .arg(toCssColor(comboPopupBorder))
-        .arg(toCssColor(comboSelectionBackground))
-        .arg(toCssColor(comboSelectionText))
         .arg(toCssColor(groupBorder))
-        .arg(toCssColor(tabBackground))
         .arg(toCssColor(footerStatusColor))
         .arg(toCssColor(footerCheckboxColor));
 
