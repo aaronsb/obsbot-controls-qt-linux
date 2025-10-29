@@ -1,11 +1,10 @@
 # Maintainer: Aaron Bockelie <aaron@bockelie.com>
-pkgname=obsbot-control
-_reponame=obsbot-camera-control
+pkgname=obsbot-camera-control
 pkgver=0.2.0
 pkgrel=1
 pkgdesc="Qt-based control application for OBSBOT cameras (Meet 2, Tiny 2, Tiny 2 Lite)"
 arch=('x86_64')
-url="https://github.com/aaronsb/${_reponame}"
+url="https://github.com/aaronsb/${pkgname}"
 license=('MIT')
 depends=(
     'qt6-base'
@@ -21,11 +20,11 @@ optdepends=(
     'v4l2loopback-dkms: Virtual camera support'
     'lsof: Camera usage detection'
 )
-source=("git+https://github.com/aaronsb/${_reponame}.git#tag=v${pkgver}")
+source=("git+https://github.com/aaronsb/${pkgname}.git#tag=v${pkgver}")
 sha256sums=('SKIP')
 
 build() {
-    cd "${srcdir}/${_reponame}"
+    cd "${srcdir}/${pkgname}"
 
     # Create build directory
     mkdir -p build
@@ -41,25 +40,25 @@ build() {
 }
 
 package() {
-    cd "${srcdir}/${_reponame}/build"
+    cd "${srcdir}/${pkgname}/build"
 
     # Install binaries
     install -Dm755 obsbot-gui "${pkgdir}/usr/bin/obsbot-gui"
     install -Dm755 obsbot-cli "${pkgdir}/usr/bin/obsbot-cli"
 
     # Install desktop file
-    install -Dm644 "${srcdir}/${_reponame}/obsbot-control.desktop" \
+    install -Dm644 "${srcdir}/${pkgname}/obsbot-control.desktop" \
         "${pkgdir}/usr/share/applications/obsbot-control.desktop"
 
     # Install icon
-    install -Dm644 "${srcdir}/${_reponame}/resources/icons/camera.svg" \
+    install -Dm644 "${srcdir}/${pkgname}/resources/icons/camera.svg" \
         "${pkgdir}/usr/share/icons/hicolor/scalable/apps/obsbot-control.svg"
 
     # Install license
-    install -Dm644 "${srcdir}/${_reponame}/LICENSE" \
+    install -Dm644 "${srcdir}/${pkgname}/LICENSE" \
         "${pkgdir}/usr/share/licenses/${pkgname}/LICENSE"
 
     # Install documentation
-    install -Dm644 "${srcdir}/${_reponame}/README.md" \
+    install -Dm644 "${srcdir}/${pkgname}/README.md" \
         "${pkgdir}/usr/share/doc/${pkgname}/README.md"
 }
