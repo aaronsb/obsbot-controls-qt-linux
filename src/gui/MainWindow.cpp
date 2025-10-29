@@ -21,10 +21,43 @@
 #include <QTabWidget>
 #include <QSpacerItem>
 #include <QSizePolicy>
+#include <QColor>
+#include <QPalette>
 #include <QList>
 #include <iostream>
 #include <array>
 #include <algorithm>
+
+namespace {
+
+QString toCssColor(const QColor &color)
+{
+    return QStringLiteral("rgba(%1, %2, %3, %4)")
+        .arg(color.red())
+        .arg(color.green())
+        .arg(color.blue())
+        .arg(color.alpha());
+}
+
+QColor withAlphaF(const QColor &color, qreal alpha)
+{
+    QColor c(color);
+    c.setAlphaF(std::clamp(alpha, 0.0, 1.0));
+    return c;
+}
+
+QColor blendColors(const QColor &from, const QColor &to, qreal progress)
+{
+    progress = std::clamp(progress, 0.0, 1.0);
+    const qreal inverse = 1.0 - progress;
+    return QColor::fromRgbF(
+        from.redF() * inverse + to.redF() * progress,
+        from.greenF() * inverse + to.greenF() * progress,
+        from.blueF() * inverse + to.blueF() * progress,
+        from.alphaF() * inverse + to.alphaF() * progress);
+}
+
+} // namespace
 
 MainWindow::MainWindow(QWidget *parent)
     : QMainWindow(parent)
@@ -34,6 +67,7 @@ MainWindow::MainWindow(QWidget *parent)
     , m_dockedMinWidth(0)
     , m_previewCardMinWidth(0)
     , m_previewCardMaxWidth(QWIDGETSIZE_MAX)
+    , m_isApplyingStyle(false)
 {
     setWindowTitle("OBSBOT Control");
     setWindowIcon(QIcon(":/icons/camera.svg"));
@@ -263,24 +297,87 @@ void MainWindow::setupUI()
 
 void MainWindow::applyModernStyle()
 {
+    if (m_isApplyingStyle) {
+        return;
+    }
+    m_isApplyingStyle = true;
+
+    const QPalette pal = palette();
+
+    const QColor window = pal.color(QPalette::Window);
+    const QColor base = pal.color(QPalette::Base);
+    const QColor text = pal.color(QPalette::WindowText);
+    const QColor button = pal.color(QPalette::Button);
+    const QColor buttonText = pal.color(QPalette::ButtonText);
+    const QColor highlight = pal.color(QPalette::Highlight);
+    const QColor highlightedText = pal.color(QPalette::HighlightedText);
+    const QColor shadow = pal.color(QPalette::Shadow);
+    const QColor brightText = pal.color(QPalette::BrightText);
+    const QColor placeholder = pal.color(QPalette::PlaceholderText);
+
+    const QColor cardBackground = blendColors(base, window, 0.5);
+    const QColor cardBorder = withAlphaF(blendColors(shadow, text, 0.4), 0.45);
+
+    const QColor mutedTone = blendColors(text, shadow, 0.35);
+    const QColor mutedBackground = withAlphaF(blendColors(mutedTone, cardBackground, 0.2), 0.35);
+    const QColor mutedBorder = withAlphaF(blendColors(mutedTone, cardBorder, 0.4), 0.55);
+    const QColor mutedChipBackground = withAlphaF(blendColors(mutedTone, cardBackground, 0.25), 0.6);
+    const QColor mutedChipText = blendColors(text, highlightedText, 0.1);
+
+    const QColor accentBackground = withAlphaF(blendColors(highlight, cardBackground, 0.25), 0.48);
+    const QColor accentBorder = withAlphaF(blendColors(highlight, cardBorder, 0.25), 0.75);
+    const QColor accentChipBackground = withAlphaF(blendColors(highlight, cardBackground, 0.15), 0.7);
+    const QColor accentChipText = blendColors(highlightedText.isValid() ? highlightedText : brightText, text, 0.2);
+
+    const QColor warningColor = blendColors(highlight.lighter(140), text, 0.4);
+
+    const QColor previewPlaceholderText = placeholder.isValid()
+        ? placeholder
+        : blendColors(text, mutedTone, 0.45);
+    const QColor previewPlaceholderBorder = withAlphaF(blendColors(text, cardBackground, 0.2), 0.35);
+
+    const QColor buttonBase = withAlphaF(blendColors(button, cardBackground, 0.2), 0.55);
+    const QColor buttonHover = withAlphaF(blendColors(button, cardBackground, 0.15), 0.7);
+    const QColor buttonPressed = withAlphaF(blendColors(button, cardBackground, 0.1), 0.8);
+    const QColor buttonTextColor = buttonText.isValid() ? buttonText : text;
+
+    const QColor primaryBackground = highlight;
+    const QColor primaryHover = highlight.lighter(115);
+    const QColor primaryChecked = highlight.darker(120);
+    const QColor primaryCheckedHover = highlight.darker(135);
+    const QColor primaryText = highlightedText.isValid() ? highlightedText : brightText;
+
+    const QColor secondaryBackground = buttonBase;
+    const QColor secondaryHover = withAlphaF(blendColors(button, cardBackground, 0.18), 0.75);
+
+    const QColor comboBorder = withAlphaF(blendColors(text, cardBackground, 0.3), 0.5);
+    const QColor comboBackground = withAlphaF(blendColors(button, cardBackground, 0.25), 0.6);
+    const QColor comboPopupBackground = cardBackground;
+    const QColor comboPopupBorder = withAlphaF(blendColors(text, cardBorder, 0.25), 0.6);
+    const QColor comboSelectionBackground = withAlphaF(highlight, 0.75);
+    const QColor comboSelectionText = accentChipText;
+
+    const QColor groupBorder = withAlphaF(blendColors(cardBorder, mutedTone, 0.35), 0.55);
+    const QColor tabBackground = withAlphaF(blendColors(button, cardBackground, 0.2), 0.5);
+
+    const QColor footerStatusColor = withAlphaF(text, 0.65);
+    const QColor footerCheckboxColor = withAlphaF(text, 0.7);
+    const QColor detachCheckedText = highlight;
+
     const QString style = QStringLiteral(R"(
         QFrame#previewCard, QFrame#controlCard {
-            background-color: palette(base);
+            background-color: %1;
             border-radius: 18px;
-            border: 1px solid rgba(0, 0, 0, 72);
+            border: 1px solid %2;
         }
         QFrame#statusBanner {
             border-radius: 12px;
-            border: 1px solid rgba(255, 255, 255, 20);
-            background-color: rgba(255, 255, 255, 10);
+            border: 1px solid %3;
+            background-color: %4;
         }
         QFrame#statusBanner[state="connected"] {
-            background-color: rgba(46, 204, 113, 41);
-            border: 1px solid rgba(46, 204, 113, 89);
-        }
-        QFrame#statusBanner[state="disconnected"] {
-            background-color: rgba(231, 76, 60, 36);
-            border: 1px solid rgba(231, 76, 60, 82);
+            background-color: %5;
+            border: 1px solid %6;
         }
         QLabel#deviceInfoLabel {
             font-weight: 600;
@@ -288,20 +385,17 @@ void MainWindow::applyModernStyle()
         QLabel#statusChip {
             padding: 6px 12px;
             border-radius: 14px;
-            background-color: rgba(255, 255, 255, 38);
+            background-color: %7;
+            color: %8;
             font-weight: 600;
             letter-spacing: 0.3px;
         }
         QFrame#statusBanner[state="connected"] QLabel#statusChip {
-            background-color: rgba(46, 204, 113, 41);
-            color: #1e8449;
-        }
-        QFrame#statusBanner[state="disconnected"] QLabel#statusChip {
-            background-color: rgba(231, 76, 60, 36);
-            color: #943126;
+            background-color: %9;
+            color: %10;
         }
         QLabel#warningLabel {
-            color: #F39C12;
+            color: %11;
             font-weight: 600;
         }
         QLabel#previewTitle {
@@ -309,67 +403,67 @@ void MainWindow::applyModernStyle()
             font-weight: 600;
         }
         QLabel#previewPlaceholder {
-            color: palette(mid);
-            border: 1px dashed rgba(255, 255, 255, 38);
+            color: %12;
+            border: 1px dashed %13;
             border-radius: 12px;
             padding: 28px;
         }
         QPushButton {
-            background-color: rgba(255, 255, 255, 15);
+            background-color: %14;
             border: none;
             padding: 10px 14px;
             border-radius: 10px;
             font-weight: 500;
-            color: palette(windowText);
+            color: %15;
         }
         QPushButton:hover {
-            background-color: rgba(255, 255, 255, 31);
+            background-color: %16;
         }
         QPushButton:pressed {
-            background-color: rgba(255, 255, 255, 46);
+            background-color: %17;
         }
         QPushButton#primaryAction {
-            background-color: #2ECC71;
-            color: white;
+            background-color: %18;
+            color: %19;
         }
         QPushButton#primaryAction:hover {
-            background-color: #29b765;
+            background-color: %20;
         }
         QPushButton#primaryAction:checked {
-            background-color: #E74C3C;
+            background-color: %21;
         }
         QPushButton#primaryAction:checked:hover {
-            background-color: #cf4436;
+            background-color: %22;
         }
         QPushButton#detachButton:checked {
-            background-color: rgba(52, 152, 219, 64);
-            color: #3498DB;
+            background-color: %23;
+            color: %24;
         }
         QPushButton#secondaryAction {
-            background-color: rgba(255, 255, 255, 20);
+            background-color: %25;
         }
         QPushButton#secondaryAction:hover {
-            background-color: rgba(255, 255, 255, 38);
+            background-color: %26;
         }
         QComboBox {
-            border: 1px solid rgba(255, 255, 255, 36);
+            border: 1px solid %27;
             border-radius: 10px;
             padding: 6px 10px;
-            background-color: rgba(255, 255, 255, 12);
-            color: palette(windowText);
+            background-color: %28;
+            color: %15;
         }
         QComboBox::drop-down {
             width: 26px;
             border: none;
         }
         QComboBox QAbstractItemView {
-            background-color: palette(base);
-            border: 1px solid rgba(255, 255, 255, 28);
-            selection-background-color: rgba(52, 152, 219, 72);
-            selection-color: white;
+            background-color: %29;
+            border: 1px solid %30;
+            selection-background-color: %31;
+            selection-color: %32;
         }
         QGroupBox {
-            border: 1px solid rgba(255, 255, 255, 26);
+            border: 1px solid %33;
             border-radius: 14px;
             margin-top: 14px;
         }
@@ -379,7 +473,7 @@ void MainWindow::applyModernStyle()
             top: -2px;
             padding: 0 8px;
             font-weight: 600;
-            background-color: palette(window);
+            background-color: %1;
         }
         QTabWidget#controlTabs::pane {
             border: none;
@@ -393,22 +487,76 @@ void MainWindow::applyModernStyle()
             padding: 8px 12px;
             margin: 0 4px;
             border-radius: 8px;
-            background-color: rgba(255, 255, 255, 13);
+            background-color: %34;
         }
         QTabBar::tab:selected {
-            background-color: rgba(52, 152, 219, 71);
-            color: white;
+            background-color: %31;
+            color: %32;
             font-weight: 600;
         }
         QLabel#footerStatus {
-            color: rgba(255, 255, 255, 153);
+            color: %35;
         }
         QCheckBox#footerCheckbox {
-            color: rgba(255, 255, 255, 166);
+            color: %36;
         }
-    )");
+    )")
+        .arg(toCssColor(cardBackground))
+        .arg(toCssColor(cardBorder))
+        .arg(toCssColor(mutedBorder))
+        .arg(toCssColor(mutedBackground))
+        .arg(toCssColor(accentBackground))
+        .arg(toCssColor(accentBorder))
+        .arg(toCssColor(mutedChipBackground))
+        .arg(toCssColor(mutedChipText))
+        .arg(toCssColor(accentChipBackground))
+        .arg(toCssColor(accentChipText))
+        .arg(toCssColor(warningColor))
+        .arg(toCssColor(previewPlaceholderText))
+        .arg(toCssColor(previewPlaceholderBorder))
+        .arg(toCssColor(buttonBase))
+        .arg(toCssColor(buttonTextColor))
+        .arg(toCssColor(buttonHover))
+        .arg(toCssColor(buttonPressed))
+        .arg(toCssColor(primaryBackground))
+        .arg(toCssColor(primaryText))
+        .arg(toCssColor(primaryHover))
+        .arg(toCssColor(primaryChecked))
+        .arg(toCssColor(primaryCheckedHover))
+        .arg(toCssColor(accentChipBackground))
+        .arg(toCssColor(detachCheckedText))
+        .arg(toCssColor(secondaryBackground))
+        .arg(toCssColor(secondaryHover))
+        .arg(toCssColor(comboBorder))
+        .arg(toCssColor(comboBackground))
+        .arg(toCssColor(comboPopupBackground))
+        .arg(toCssColor(comboPopupBorder))
+        .arg(toCssColor(comboSelectionBackground))
+        .arg(toCssColor(comboSelectionText))
+        .arg(toCssColor(groupBorder))
+        .arg(toCssColor(tabBackground))
+        .arg(toCssColor(footerStatusColor))
+        .arg(toCssColor(footerCheckboxColor));
 
     setStyleSheet(style);
+    m_isApplyingStyle = false;
+}
+
+bool MainWindow::event(QEvent *event)
+{
+    const bool handled = QMainWindow::event(event);
+
+    switch (event->type()) {
+    case QEvent::PaletteChange:
+    case QEvent::ApplicationPaletteChange:
+    case QEvent::ThemeChange:
+        applyModernStyle();
+        break;
+    default:
+        break;
+    }
+
+    return handled;
 }
 
 void MainWindow::detachPreviewToWindow()

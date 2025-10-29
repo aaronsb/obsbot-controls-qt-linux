@@ -58,7 +58,7 @@ PTZControlWidget::PTZControlWidget(CameraController *controller, QWidget *parent
     // Position label
     m_positionLabel = new QLabel("Position: Pan 0.00, Tilt 0.00", this);
     m_positionLabel->setAlignment(Qt::AlignCenter);
-    m_positionLabel->setStyleSheet("color: #666; font-size: 11px;");
+    m_positionLabel->setStyleSheet("color: palette(mid); font-size: 11px;");
     groupLayout->addWidget(m_positionLabel);
 
     // Zoom slider
@@ -96,7 +96,7 @@ PTZControlWidget::PTZControlWidget(CameraController *controller, QWidget *parent
         row->addWidget(titleLabel);
 
         presetUi.statusLabel = new QLabel("Empty", this);
-        presetUi.statusLabel->setStyleSheet("color: #666; font-size: 11px;");
+        presetUi.statusLabel->setStyleSheet("color: palette(mid); font-size: 11px;");
         row->addWidget(presetUi.statusLabel, 1);
 
         presetUi.recallButton = new QPushButton("Recall", this);

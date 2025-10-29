@@ -62,6 +62,7 @@ CameraPreviewWidget::CameraPreviewWidget(QWidget *parent)
     , m_videoWidget(nullptr)
     , m_formatCombo(nullptr)
     , m_statusLabel(nullptr)
+    , m_controlRow(nullptr)
     , m_selectedFormatId(QStringLiteral("auto"))
     , m_previewEnabled(false)
     , m_isApplyingFormat(false)
@@ -80,7 +81,8 @@ void CameraPreviewWidget::setupUI()
     layout->setContentsMargins(8, 8, 8, 8);
     layout->setSpacing(6);
 
-    QHBoxLayout *controlLayout = new QHBoxLayout();
+    m_controlRow = new QWidget(this);
+    QHBoxLayout *controlLayout = new QHBoxLayout(m_controlRow);
     controlLayout->setContentsMargins(0, 0, 0, 0);
     controlLayout->setSpacing(8);
 
@@ -95,7 +97,7 @@ void CameraPreviewWidget::setupUI()
 
     controlLayout->addWidget(formatLabel);
     controlLayout->addWidget(m_formatCombo, 1);
-    layout->addLayout(controlLayout);
+    layout->addWidget(m_controlRow);
 
     m_statusLabel = new QLabel(tr("Preview disabled"), this);
     m_statusLabel->setStyleSheet("color: palette(mid); font-size: 11px;");
@@ -103,7 +105,7 @@ void CameraPreviewWidget::setupUI()
 
     m_videoWidget = new QVideoWidget(this);
     m_videoWidget->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Expanding);
-    m_videoWidget->setStyleSheet("background-color: black;");
+    m_videoWidget->setStyleSheet("background-color: palette(window);");
     layout->addWidget(m_videoWidget, 1);
 }
 

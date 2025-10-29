@@ -110,7 +110,10 @@ private:
     QSystemTrayIcon *m_trayIcon;
     QMenu *m_trayMenu;
 
+    bool m_isApplyingStyle;
+
 protected:
+    bool event(QEvent *event) override;
     void changeEvent(QEvent *event) override;
     void closeEvent(QCloseEvent *event) override;
 };
