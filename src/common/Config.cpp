@@ -3,6 +3,7 @@
 #include <sstream>
 #include <iostream>
 #include <cstdlib>
+#include <unordered_set>
 #include <sys/stat.h>
 #include <sys/types.h>
 
@@ -170,22 +171,53 @@ bool Config::load(std::vector<ValidationError> &errors)
         }
     }
 
+    const std::unordered_set<std::string> optionalKeys = {
+        "ai_mode",
+        "ai_sub_mode",
+        "auto_zoom",
+        "track_speed",
+        "audio_auto_gain",
+        "preview_format"
+    };
+
+    auto isPresetKey = [](const std::string &key) -> bool {
+        if (key.rfind("preset", 0) != 0 || key.size() < 10) {
+            return false;
+        }
+
+        char presetIndex = key[6];
+        if (presetIndex < '1' || presetIndex > '3') {
+            return false;
+        }
+
+        if (key[7] != '_') {
+            return false;
+        }
+
+        const std::string suffix = key.substr(8);
+        static const std::unordered_set<std::string> presetSuffixes = {
+            "defined",
+            "pan",
+            "tilt",
+            "zoom"
+        };
+        return presetSuffixes.count(suffix) > 0;
+    };
+
     // Check for unknown properties
+    std::unordered_set<std::string> knownKeys(requiredKeys.begin(), requiredKeys.end());
+    knownKeys.insert(optionalKeys.begin(), optionalKeys.end());
+
     for (const auto &key : foundKeys) {
-        bool isKnown = false;
-        for (const auto &required : requiredKeys) {
-            if (key == required) {
-                isKnown = true;
-                break;
-            }
+        if (knownKeys.count(key) > 0 || isPresetKey(key)) {
+            continue;
         }
-        if (!isKnown) {
-            ValidationError err;
-            err.type = UnknownProperty;
-            err.message = "Unknown property '" + key + "'";
-            err.lineNumber = 0;
-            errors.push_back(err);
-        }
+
+        ValidationError err;
+        err.type = UnknownProperty;
+        err.message = "Unknown property '" + key + "'";
+        err.lineNumber = 0;
+        errors.push_back(err);
     }
 
     return errors.empty();
