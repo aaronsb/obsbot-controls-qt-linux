@@ -100,6 +100,81 @@ echo ""
 print_msg "$GREEN" "✓ Repository ready"
 echo ""
 
+# Branch selection
+CURRENT_BRANCH=$(git rev-parse --abbrev-ref HEAD)
+print_msg "$BLUE" "Current branch: $CURRENT_BRANCH"
+echo ""
+read -p "Switch to a different branch? [y/N] " -n 1 -r
+echo ""
+
+if [[ $REPLY =~ ^[Yy]$ ]]; then
+    # Fetch latest remote branches
+    print_msg "$BLUE" "Fetching remote branches..."
+    git fetch --all --quiet
+
+    # Get all branches (local and remote)
+    print_msg "$BLUE" "Available branches:"
+    echo ""
+
+    # Local branches
+    print_msg "$YELLOW" "Local branches:"
+    local_branches=($(git branch --format='%(refname:short)'))
+    for i in "${!local_branches[@]}"; do
+        branch="${local_branches[$i]}"
+        if [ "$branch" = "$CURRENT_BRANCH" ]; then
+            print_msg "$GREEN" "  $((i+1)). $branch (current)"
+        else
+            print_msg "$NC" "  $((i+1)). $branch"
+        fi
+    done
+
+    local_count=${#local_branches[@]}
+
+    # Remote branches (excluding HEAD and already tracked branches)
+    print_msg "$YELLOW" "Remote branches:"
+    remote_branches=($(git branch -r --format='%(refname:short)' | grep -v 'HEAD' | grep -v "^origin/$CURRENT_BRANCH$" | sed 's/^origin\///'))
+    for i in "${!remote_branches[@]}"; do
+        branch="${remote_branches[$i]}"
+        # Only show if not already in local branches
+        if [[ ! " ${local_branches[@]} " =~ " ${branch} " ]]; then
+            print_msg "$NC" "  $((i+local_count+1)). origin/$branch"
+        fi
+    done
+
+    echo ""
+    read -p "Enter branch number (or 'c' to cancel): " branch_choice
+
+    if [[ $branch_choice =~ ^[0-9]+$ ]]; then
+        if [ "$branch_choice" -le "$local_count" ]; then
+            # Local branch
+            selected_branch="${local_branches[$((branch_choice-1))]}"
+            if [ "$selected_branch" != "$CURRENT_BRANCH" ]; then
+                print_msg "$BLUE" "Switching to local branch: $selected_branch"
+                git checkout "$selected_branch"
+            else
+                print_msg "$YELLOW" "Already on branch $selected_branch"
+            fi
+        else
+            # Remote branch
+            remote_idx=$((branch_choice-local_count-1))
+            if [ "$remote_idx" -ge 0 ] && [ "$remote_idx" -lt "${#remote_branches[@]}" ]; then
+                selected_branch="${remote_branches[$remote_idx]}"
+                print_msg "$BLUE" "Checking out remote branch: origin/$selected_branch"
+                git checkout -b "$selected_branch" "origin/$selected_branch" 2>/dev/null || git checkout "$selected_branch"
+            else
+                print_msg "$RED" "Invalid selection"
+                exit 1
+            fi
+        fi
+    elif [[ $branch_choice =~ ^[Cc]$ ]]; then
+        print_msg "$YELLOW" "Staying on branch: $CURRENT_BRANCH"
+    else
+        print_msg "$RED" "Invalid input"
+        exit 1
+    fi
+    echo ""
+fi
+
 # Run the build script
 print_msg "$BLUE" "🔨 Starting build and installation..."
 print_msg "$YELLOW" "Note: You'll be prompted to optionally install the CLI tool"
