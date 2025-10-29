@@ -4,6 +4,9 @@
 #include <QWidget>
 #include <QCheckBox>
 #include <QComboBox>
+#include <QPushButton>
+#include <QSlider>
+#include <QLabel>
 #include <QHBoxLayout>
 #include <QVBoxLayout>
 #include <QGroupBox>
@@ -12,8 +15,8 @@
 #include "CameraController.h"
 
 /**
- * @brief Simple widget for enabling/disabling face tracking
- * Shown in: Simple, Advanced, Expert modes
+ * @brief Widget for camera tracking control (automatic or manual PTZ)
+ * Contains auto-framing toggle and manual PTZ controls (mutually exclusive)
  */
 class TrackingControlWidget : public QWidget
 {
@@ -48,6 +51,14 @@ private slots:
     void onSpeedChanged(int index);
     void onAudioGainToggled(bool checked);
 
+    // Manual PTZ control slots
+    void onPanLeftClicked();
+    void onPanRightClicked();
+    void onTiltUpClicked();
+    void onTiltDownClicked();
+    void onCenterClicked();
+    void onZoomChanged(int value);
+
 private:
     CameraController *m_controller;
     QCheckBox *m_trackingCheckBox;
@@ -61,7 +72,19 @@ private:
     QTimer *m_commandTimer;  // Debounce timer for command completion
     bool m_tiny2Capabilities; // flag for advanced tracking features
 
+    // Manual PTZ controls
+    QPushButton *m_panLeftBtn;
+    QPushButton *m_panRightBtn;
+    QPushButton *m_tiltUpBtn;
+    QPushButton *m_tiltDownBtn;
+    QPushButton *m_centerBtn;
+    QSlider *m_zoomSlider;
+    QLabel *m_zoomLabel;
+    QLabel *m_positionLabel;
+    QWidget *m_ptzContainer;
+
     void updateTiny2Visibility();
+    void updatePTZControlsState();
 };
 
 #endif // TRACKINGCONTROLWIDGET_H
