@@ -59,6 +59,42 @@ if ! git diff-index --quiet HEAD -- 2>/dev/null; then
     fi
 fi
 
+# Check if local main/master is in sync with remote
+CURRENT_BRANCH=$(git rev-parse --abbrev-ref HEAD)
+print_msg "$BLUE" "🔍 Checking if $CURRENT_BRANCH is in sync with remote..."
+
+# Fetch latest from remote
+git fetch origin "$CURRENT_BRANCH" 2>/dev/null
+
+# Check if we're behind
+BEHIND=$(git rev-list HEAD..origin/"$CURRENT_BRANCH" --count 2>/dev/null || echo "0")
+if [ "$BEHIND" -gt 0 ]; then
+    print_msg "$RED" "❌ Error: Your local branch is $BEHIND commit(s) behind origin/$CURRENT_BRANCH"
+    print_msg "$YELLOW" "Run: git pull origin $CURRENT_BRANCH"
+    exit 1
+fi
+
+# Check if we're ahead
+AHEAD=$(git rev-list origin/"$CURRENT_BRANCH"..HEAD --count 2>/dev/null || echo "0")
+if [ "$AHEAD" -gt 0 ]; then
+    print_msg "$YELLOW" "⚠️  Warning: Your local branch is $AHEAD commit(s) ahead of origin/$CURRENT_BRANCH"
+    print_msg "$YELLOW" "You need to push to GitHub before publishing to AUR!"
+    echo ""
+    read -p "Push to origin/$CURRENT_BRANCH now? [Y/n] " -n 1 -r
+    echo ""
+    if [[ ! $REPLY =~ ^[Nn]$ ]]; then
+        git push origin "$CURRENT_BRANCH"
+        print_msg "$GREEN" "✓ Pushed to origin/$CURRENT_BRANCH"
+    else
+        print_msg "$RED" "❌ Cannot publish to AUR without pushing to GitHub first"
+        print_msg "$YELLOW" "The PKGBUILD sources from GitHub, so changes must be there!"
+        exit 1
+    fi
+else
+    print_msg "$GREEN" "✓ Local branch in sync with origin/$CURRENT_BRANCH"
+fi
+echo ""
+
 # Check if tag exists for this version
 TAG_NAME="v${PKGVER}"
 if ! git rev-parse "$TAG_NAME" >/dev/null 2>&1; then
