@@ -81,12 +81,13 @@ target_link_libraries(obsbot-cli PRIVATE
 )
 
 # Set RPATH for finding libdev.so
+# Build uses local SDK, install uses system library path
 set_target_properties(obsbot-gui PROPERTIES
     BUILD_RPATH "${SDK_LIB_DIR}"
-    INSTALL_RPATH "${SDK_LIB_DIR}"
+    INSTALL_RPATH "/usr/lib"
 )
 
 set_target_properties(obsbot-cli PROPERTIES
     BUILD_RPATH "${SDK_LIB_DIR}"
-    INSTALL_RPATH "${SDK_LIB_DIR}"
+    INSTALL_RPATH "/usr/lib"
 )
