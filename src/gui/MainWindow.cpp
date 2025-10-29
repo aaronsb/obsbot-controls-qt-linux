@@ -261,6 +261,7 @@ void MainWindow::setupUI()
     m_trackingWidget = new TrackingControlWidget(m_controller, this);
     m_ptzWidget = new PTZControlWidget(m_controller, this);
     m_settingsWidget = new CameraSettingsWidget(m_controller, this);
+    m_ptzWidget->setCameraSettingsWidget(m_settingsWidget);
     connect(m_ptzWidget, &PTZControlWidget::presetUpdated,
             this, &MainWindow::onPresetUpdated);
 
@@ -800,7 +801,6 @@ void MainWindow::onStateChanged(const CameraController::CameraState &state)
 {
     // Update all widgets with new state
     m_trackingWidget->updateFromState(state);
-    m_ptzWidget->updateFromState(state);
     m_settingsWidget->updateFromState(state);
 }
 

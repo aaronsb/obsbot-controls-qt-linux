@@ -9,9 +9,11 @@
 #include <array>
 #include "CameraController.h"
 
+class CameraSettingsWidget;
+
 /**
- * @brief Widget for manual Pan/Tilt/Zoom control
- * Shown in: Advanced, Expert modes
+ * @brief Widget for camera preset management
+ * Manages PTZ (position/zoom) presets and image quality presets
  */
 class PTZControlWidget : public QWidget
 {
@@ -20,7 +22,10 @@ class PTZControlWidget : public QWidget
 public:
     explicit PTZControlWidget(CameraController *controller, QWidget *parent = nullptr);
 
-    void updateFromState(const CameraController::CameraState &state);
+    void setCameraSettingsWidget(CameraSettingsWidget *settingsWidget) {
+        m_settingsWidget = settingsWidget;
+    }
+
     struct PresetState {
         bool defined;
         double pan;
@@ -30,33 +35,36 @@ public:
     void applyPresetStates(const std::array<PresetState, 3> &presets);
     std::array<PresetState, 3> currentPresets() const;
 
+    struct ImagePresetState {
+        bool defined;
+        bool hdrEnabled;
+        int fovMode;
+        bool faceAE;
+        bool faceFocus;
+        bool brightnessAuto;
+        int brightness;
+        bool contrastAuto;
+        int contrast;
+        bool saturationAuto;
+        int saturation;
+        int whiteBalance;
+    };
+    void applyImagePresetStates(const std::array<ImagePresetState, 3> &presets);
+    std::array<ImagePresetState, 3> currentImagePresets() const;
+
 signals:
     void presetUpdated(int index, double pan, double tilt, double zoom, bool defined);
+    void imagePresetUpdated(int index);
 
 private slots:
-    void onPanLeftClicked();
-    void onPanRightClicked();
-    void onTiltUpClicked();
-    void onTiltDownClicked();
-    void onCenterClicked();
-    void onZoomChanged(int value);
     void onRecallPreset();
     void onStorePreset();
+    void onRecallImagePreset();
+    void onStoreImagePreset();
 
 private:
     CameraController *m_controller;
-
-    // PTZ buttons
-    QPushButton *m_panLeftBtn;
-    QPushButton *m_panRightBtn;
-    QPushButton *m_tiltUpBtn;
-    QPushButton *m_tiltDownBtn;
-    QPushButton *m_centerBtn;
-
-    // Zoom
-    QSlider *m_zoomSlider;
-    QLabel *m_zoomLabel;
-    QLabel *m_positionLabel;
+    CameraSettingsWidget *m_settingsWidget;
 
     struct PresetUi {
         QPushButton *recallButton;
@@ -68,9 +76,18 @@ private:
         double zoom;
     };
 
+    struct ImagePresetUi {
+        QPushButton *recallButton;
+        QPushButton *saveButton;
+        QLabel *statusLabel;
+        ImagePresetState state;
+    };
+
     std::array<PresetUi, 3> m_presets;
+    std::array<ImagePresetUi, 3> m_imagePresets;
 
     void updatePresetLabel(int index);
+    void updateImagePresetLabel(int index);
 };
 
 #endif // PTZCONTROLWIDGET_H
