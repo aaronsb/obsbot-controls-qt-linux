@@ -114,11 +114,17 @@ AUR_DIR="/tmp/obsbot-camera-control-aur"
 if [ -d "$AUR_DIR" ]; then
     print_msg "$BLUE" "🔄 Updating existing AUR repository..."
     cd "$AUR_DIR"
-    git pull
+    # Ensure we're on master branch (AUR requirement)
+    git checkout master 2>/dev/null || git checkout -b master
+    git pull origin master
     cd - > /dev/null
 else
     print_msg "$BLUE" "📥 Cloning AUR repository..."
     git clone ssh://aur@aur.archlinux.org/obsbot-camera-control.git "$AUR_DIR"
+    cd "$AUR_DIR"
+    # Ensure we're on master branch (AUR uses master, not main)
+    git checkout master 2>/dev/null || git checkout -b master
+    cd - > /dev/null
 fi
 print_msg "$GREEN" "✓ AUR repository ready"
 echo ""
