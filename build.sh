@@ -27,6 +27,7 @@ INSTALL_DIR="${XDG_BIN_HOME:-$HOME/.local/bin}"
 DESKTOP_DIR="${XDG_DATA_HOME:-$HOME/.local/share}/applications"
 ICON_DIR="${XDG_DATA_HOME:-$HOME/.local/share}/icons/hicolor/scalable/apps"
 BUILD_DIR="build"
+BIN_DIR="bin"
 PROJECT_NAME="obsbot"
 
 # Print colored message
@@ -51,7 +52,7 @@ show_usage() {
     echo -e "    - Creates build/ directory if it doesn't exist"
     echo -e "    - Runs CMake to configure the project"
     echo -e "    - Compiles both GUI and CLI applications"
-    echo -e "    - Binaries will be in build/obsbot-gui and build/obsbot-cli"
+    echo -e "    - Binaries will be in bin/obsbot-gui and bin/obsbot-cli"
     echo -e ""
     echo -e "    ${YELLOW}Example:${NC} ./build.sh build --confirm"
     echo -e ""
@@ -390,8 +391,8 @@ do_build() {
 
     print_msg "$GREEN" "✓ Build complete!"
     print_msg "$NC" "\nBinaries are in:"
-    print_msg "$BLUE" "  - $BUILD_DIR/obsbot-gui (GUI application)"
-    print_msg "$BLUE" "  - $BUILD_DIR/obsbot-cli (CLI tool)"
+    print_msg "$BLUE" "  - $BIN_DIR/obsbot-gui (GUI application)"
+    print_msg "$BLUE" "  - $BIN_DIR/obsbot-cli (CLI tool)"
 }
 
 # Install the project
@@ -410,7 +411,7 @@ do_install() {
 
     # Copy GUI binary (always installed)
     print_msg "$BLUE" "Installing GUI application..."
-    cp "$BUILD_DIR/obsbot-gui" "$INSTALL_DIR/"
+    cp "$BIN_DIR/obsbot-gui" "$INSTALL_DIR/"
     chmod +x "$INSTALL_DIR/obsbot-gui"
 
     local installed_apps="  - obsbot-gui"
@@ -422,7 +423,7 @@ do_install() {
 
     if [[ $REPLY =~ ^[Yy]$ ]]; then
         print_msg "$BLUE" "Installing CLI tool..."
-        cp "$BUILD_DIR/obsbot-cli" "$INSTALL_DIR/"
+        cp "$BIN_DIR/obsbot-cli" "$INSTALL_DIR/"
         chmod +x "$INSTALL_DIR/obsbot-cli"
         installed_apps="$installed_apps\n  - obsbot-cli"
     else

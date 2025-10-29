@@ -2,6 +2,7 @@
 build/
 build-*/
 cmake-build-*/
+bin/
 
 # Qt generated files
 *_autogen/
