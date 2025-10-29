@@ -36,7 +36,7 @@ echo ""
 
 # Determine installation directory
 INSTALL_BASE="${HOME}/src"
-PROJECT_DIR="${INSTALL_BASE}/obsbot-controls-qt-linux"
+PROJECT_DIR="${INSTALL_BASE}/obsbot-camera-control"
 
 print_msg "$BLUE" "📂 Installation directory: $PROJECT_DIR"
 echo ""
@@ -92,7 +92,7 @@ if [ -d "$PROJECT_DIR" ]; then
     git pull
 else
     print_msg "$BLUE" "📥 Cloning repository..."
-    git clone https://github.com/aaronsb/obsbot-controls-qt-linux.git "$PROJECT_DIR"
+    git clone https://github.com/aaronsb/obsbot-camera-control.git "$PROJECT_DIR"
     cd "$PROJECT_DIR"
 fi
 

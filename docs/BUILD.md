@@ -18,8 +18,8 @@ The fastest way to get started:
 
 ```bash
 # Clone the repository
-git clone https://github.com/aaronsb/obsbot-controls-qt-linux.git
-cd obsbot-controls-qt-linux
+git clone https://github.com/aaronsb/obsbot-camera-control.git
+cd obsbot-camera-control
 
 # Build and install with the automated script
 ./build.sh install --confirm
@@ -427,6 +427,6 @@ make -j$(nproc)
 
 ## Getting Help
 
-- **Build Issues**: Check [GitHub Issues](https://github.com/aaronsb/obsbot-controls-qt-linux/issues)
+- **Build Issues**: Check [GitHub Issues](https://github.com/aaronsb/obsbot-camera-control/issues)
 - **Usage Questions**: See main [README](../README.md)
-- **Report Bugs**: [Open an Issue](https://github.com/aaronsb/obsbot-controls-qt-linux/issues/new)
+- **Report Bugs**: [Open an Issue](https://github.com/aaronsb/obsbot-camera-control/issues/new)

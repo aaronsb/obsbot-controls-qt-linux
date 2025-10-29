@@ -73,12 +73,12 @@ This application was developed and tested primarily with the **OBSBOT Meet 2**, 
 - ❌ Face-based Auto Focus (works via Cameractrl though)
 - ❌ Auto image controls
 
-*Tested and reported by: [samdark](https://github.com/aaronsb/obsbot-controls-qt-linux/issues/7)*
+*Tested and reported by: [samdark](https://github.com/aaronsb/obsbot-camera-control/issues/7)*
 
 ### Other Models
 Other OBSBOT cameras may work with varying degrees of functionality. The SDK supports multiple product types (Tiny, Tiny 2, Tail Air, Me, etc.), but testing is needed.
 
-**Have another model?** Please [open an issue](https://github.com/aaronsb/obsbot-controls-qt-linux/issues) to report compatibility!
+**Have another model?** Please [open an issue](https://github.com/aaronsb/obsbot-camera-control/issues) to report compatibility!
 
 ## Requirements
 
@@ -102,14 +102,14 @@ Other OBSBOT cameras may work with varying degrees of functionality. The SDK sup
 
 ### One-Line Install
 
-For the adventurous, a single command that clones the repo to `~/src/obsbot-controls-qt-linux` and builds/installs:
+For the adventurous, a single command that clones the repo to `~/src/obsbot-camera-control` and builds/installs:
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/aaronsb/obsbot-controls-qt-linux/main/install.sh | bash
+curl -fsSL https://raw.githubusercontent.com/aaronsb/obsbot-camera-control/main/install.sh | bash
 ```
 
 ⚠️ **What this does:**
-- Clones repository to `~/src/obsbot-controls-qt-linux`
+- Clones repository to `~/src/obsbot-camera-control`
 - Checks dependencies (shows what to install if missing)
 - Builds and installs the application
 - Adds desktop launcher to your app menu
@@ -120,8 +120,8 @@ If you prefer to review the code first (recommended):
 
 ```bash
 # Clone and build
-git clone https://github.com/aaronsb/obsbot-controls-qt-linux.git
-cd obsbot-controls-qt-linux
+git clone https://github.com/aaronsb/obsbot-camera-control.git
+cd obsbot-camera-control
 ./build.sh install --confirm
 ```
 
@@ -279,7 +279,7 @@ See CLI help for available commands.
 ## Project Structure
 
 ```
-obsbot-controls-qt-linux/
+obsbot-camera-control/
 ├── src/
 │   ├── gui/           # Qt6 GUI application
 │   ├── cli/           # Command-line interface
