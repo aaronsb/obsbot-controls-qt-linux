@@ -8,6 +8,7 @@
 #include <cstdint>
 #include <cstring>
 #include <fcntl.h>
+#include <algorithm>
 #include <linux/videodev2.h>
 #include <sys/ioctl.h>
 #include <unistd.h>
@@ -106,6 +107,7 @@ VirtualCameraStreamer::VirtualCameraStreamer(QObject *parent)
     , m_deviceConfigured(false)
     , m_frameWidth(0)
     , m_frameHeight(0)
+    , m_forcedResolution()
 {
 }
 
@@ -145,6 +147,17 @@ void VirtualCameraStreamer::setEnabled(bool enabled)
     }
 }
 
+void VirtualCameraStreamer::setForcedResolution(const QSize &resolution)
+{
+    const QSize normalized = resolution.isValid() ? resolution : QSize();
+    if (normalized == m_forcedResolution) {
+        return;
+    }
+
+    m_forcedResolution = normalized;
+    closeDevice();
+}
+
 void VirtualCameraStreamer::onProcessedFrameReady(const QImage &frame)
 {
     if (!m_enabled) {
@@ -160,6 +173,47 @@ void VirtualCameraStreamer::onProcessedFrameReady(const QImage &frame)
         image = image.convertToFormat(QImage::Format_RGB888);
         if (image.isNull()) {
             qCWarning(VirtualCameraLog) << "Failed to convert frame to RGB888 format";
+            return;
+        }
+    }
+
+    QSize targetSize = m_forcedResolution.isValid() ? m_forcedResolution : image.size();
+    if (targetSize.width() <= 0 || targetSize.height() <= 0) {
+        return;
+    }
+
+    if (image.size() != targetSize) {
+        if (m_forcedResolution.isValid()) {
+            QImage scaled = image.scaled(targetSize, Qt::KeepAspectRatioByExpanding, Qt::SmoothTransformation);
+            if (scaled.isNull()) {
+                qCWarning(VirtualCameraLog) << "Failed to scale frame to forced resolution" << targetSize;
+                return;
+            }
+
+            if (scaled.size() != targetSize) {
+                const int xOffset = std::max(0, (scaled.width() - targetSize.width()) / 2);
+                const int yOffset = std::max(0, (scaled.height() - targetSize.height()) / 2);
+                image = scaled.copy(xOffset, yOffset, targetSize.width(), targetSize.height());
+            } else {
+                image = scaled;
+            }
+        } else {
+            targetSize = image.size();
+        }
+    }
+
+    if (image.size() != targetSize) {
+        image = image.scaled(targetSize, Qt::IgnoreAspectRatio, Qt::SmoothTransformation);
+    }
+
+    if (image.isNull()) {
+        return;
+    }
+
+    if (image.format() != QImage::Format_RGB888) {
+        image = image.convertToFormat(QImage::Format_RGB888);
+        if (image.isNull()) {
+            qCWarning(VirtualCameraLog) << "Failed to normalize frame format after scaling";
             return;
         }
     }
@@ -222,6 +276,8 @@ void VirtualCameraStreamer::closeDevice()
         m_fd = -1;
     }
     m_deviceConfigured = false;
+    m_frameWidth = 0;
+    m_frameHeight = 0;
 }
 
 bool VirtualCameraStreamer::configureFormat(int width, int height)

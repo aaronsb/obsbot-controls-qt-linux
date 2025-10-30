@@ -4,13 +4,15 @@
 #include <QObject>
 #include <QImage>
 #include <QString>
+#include <QSize>
 
 /**
  * @brief Streams preview frames into a v4l2loopback virtual camera device.
  *
  * The streamer opens the requested V4L2 video output device and writes
- * frames in BGR24 format, enabling other applications to consume the
- * processed camera feed.
+ * frames in YUYV (YUY2) format. An optional forced resolution keeps the
+ * virtual camera output stable for conferencing apps that dislike runtime
+ * format changes.
  */
 class VirtualCameraStreamer : public QObject
 {
@@ -25,6 +27,8 @@ public:
 
     bool isEnabled() const { return m_enabled; }
     void setEnabled(bool enabled);
+    void setForcedResolution(const QSize &resolution);
+    QSize forcedResolution() const { return m_forcedResolution; }
 
 public slots:
     void onProcessedFrameReady(const QImage &frame);
@@ -44,6 +48,7 @@ private:
     bool m_deviceConfigured;
     int m_frameWidth;
     int m_frameHeight;
+    QSize m_forcedResolution;
 };
 
 #endif // VIRTUALCAMERASTREAMER_H

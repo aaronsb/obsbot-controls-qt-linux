@@ -74,6 +74,7 @@ public:
         bool startMinimized;  // Start application minimized to tray
         bool virtualCameraEnabled;
         std::string virtualCameraDevice;
+        std::string virtualCameraResolution;
     };
 
     Config();

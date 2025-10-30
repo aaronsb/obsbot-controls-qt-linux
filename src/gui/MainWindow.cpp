@@ -24,6 +24,7 @@
 #include <QSpacerItem>
 #include <QSizePolicy>
 #include <QGroupBox>
+#include <QComboBox>
 #include <QLineEdit>
 #include <QColor>
 #include <QPalette>
@@ -61,6 +62,68 @@ QColor blendColors(const QColor &from, const QColor &to, qreal progress)
         from.alphaF() * inverse + to.alphaF() * progress);
 }
 
+struct VirtualCameraResolutionPreset {
+    const char *key;
+    int width;
+    int height;
+};
+
+constexpr VirtualCameraResolutionPreset kVirtualCameraResolutionPresets[] = {
+    {"match", 0, 0},
+    {"960x540", 960, 540},
+    {"1280x720", 1280, 720},
+    {"1920x1080", 1920, 1080}
+};
+
+QString buildResolutionLabel(const VirtualCameraResolutionPreset &preset)
+{
+    if (preset.width <= 0 || preset.height <= 0) {
+        return MainWindow::tr("Match preview resolution");
+    }
+
+    const int progressiveHeight = preset.height;
+    return MainWindow::tr("%1p (%2 × %3)")
+        .arg(progressiveHeight)
+        .arg(preset.width)
+        .arg(preset.height);
+}
+
+QSize resolutionSizeForKey(const QString &key)
+{
+    if (key.isEmpty() || key.compare(QStringLiteral("match"), Qt::CaseInsensitive) == 0) {
+        return QSize();
+    }
+
+    QString normalized = key.trimmed();
+    normalized.replace(QLatin1Char('X'), QLatin1Char('x'));
+
+    const int separator = normalized.indexOf(QLatin1Char('x'));
+    if (separator <= 0) {
+        return QSize();
+    }
+
+    bool okWidth = false;
+    bool okHeight = false;
+    const int width = normalized.left(separator).toInt(&okWidth);
+    const int height = normalized.mid(separator + 1).toInt(&okHeight);
+
+    if (!okWidth || !okHeight || width <= 0 || height <= 0) {
+        return QSize();
+    }
+
+    return QSize(width, height);
+}
+
+bool isDefaultResolutionKey(const QString &key)
+{
+    for (const auto &preset : kVirtualCameraResolutionPresets) {
+        if (QLatin1String(preset.key).compare(key, Qt::CaseInsensitive) == 0) {
+            return true;
+        }
+    }
+    return false;
+}
+
 } // namespace
 
 MainWindow::MainWindow(QWidget *parent)
@@ -73,6 +136,7 @@ MainWindow::MainWindow(QWidget *parent)
     , m_previewCardMaxWidth(QWIDGETSIZE_MAX)
     , m_virtualCameraCheckbox(nullptr)
     , m_virtualCameraDeviceEdit(nullptr)
+    , m_virtualCameraResolutionCombo(nullptr)
     , m_virtualCameraStreamer(nullptr)
     , m_isApplyingStyle(false)
     , m_virtualCameraErrorNotified(false)
@@ -301,6 +365,31 @@ void MainWindow::setupUI()
     virtualDeviceLayout->addWidget(m_virtualCameraDeviceEdit, 1);
 
     virtualLayout->addLayout(virtualDeviceLayout);
+
+    QHBoxLayout *virtualResolutionLayout = new QHBoxLayout();
+    virtualResolutionLayout->setContentsMargins(0, 0, 0, 0);
+    virtualResolutionLayout->setSpacing(8);
+
+    QLabel *virtualResolutionLabel = new QLabel(tr("Output resolution"), virtualCameraGroup);
+    virtualResolutionLayout->addWidget(virtualResolutionLabel);
+
+    m_virtualCameraResolutionCombo = new QComboBox(virtualCameraGroup);
+    m_virtualCameraResolutionCombo->setSizeAdjustPolicy(QComboBox::AdjustToContents);
+    for (const auto &preset : kVirtualCameraResolutionPresets) {
+        const QString key = QLatin1String(preset.key);
+        const QString label = buildResolutionLabel(preset);
+        m_virtualCameraResolutionCombo->addItem(label, key);
+    }
+    connect(m_virtualCameraResolutionCombo, QOverload<int>::of(&QComboBox::currentIndexChanged),
+            this, &MainWindow::onVirtualCameraResolutionChanged);
+    virtualResolutionLayout->addWidget(m_virtualCameraResolutionCombo, 1);
+
+    virtualLayout->addLayout(virtualResolutionLayout);
+
+    QLabel *virtualResolutionHint = new QLabel(tr("Pick a fixed size to keep Zoom and other apps happy when you change preview quality."), virtualCameraGroup);
+    virtualResolutionHint->setWordWrap(true);
+    virtualResolutionHint->setStyleSheet("color: palette(mid); font-size: 11px;");
+    virtualLayout->addWidget(virtualResolutionHint);
     controlLayout->addWidget(virtualCameraGroup);
 
     m_startMinimizedCheckbox = new QCheckBox(tr("Launch minimized / Close to tray"), m_controlCard);
@@ -857,6 +946,16 @@ void MainWindow::updateVirtualCameraStreamerState()
 
     m_virtualCameraStreamer->setDevicePath(devicePath);
 
+    QString resolutionKey;
+    if (m_virtualCameraResolutionCombo && m_virtualCameraResolutionCombo->currentIndex() >= 0) {
+        resolutionKey = m_virtualCameraResolutionCombo->currentData().toString();
+    }
+    if (resolutionKey.isEmpty()) {
+        resolutionKey = QString::fromStdString(m_controller->getConfig().getSettings().virtualCameraResolution);
+    }
+    const QSize forcedSize = resolutionSizeForKey(resolutionKey);
+    m_virtualCameraStreamer->setForcedResolution(forcedSize);
+
     const bool enableOutput = m_virtualCameraCheckbox && m_virtualCameraCheckbox->isChecked()
         && m_previewWidget && m_previewWidget->isPreviewEnabled();
     m_virtualCameraStreamer->setEnabled(enableOutput);
@@ -920,6 +1019,28 @@ void MainWindow::loadConfiguration()
         m_virtualCameraDeviceEdit->blockSignals(true);
         m_virtualCameraDeviceEdit->setText(QString::fromStdString(settings.virtualCameraDevice));
         m_virtualCameraDeviceEdit->blockSignals(false);
+    }
+
+    if (m_virtualCameraResolutionCombo) {
+        const QString key = QString::fromStdString(settings.virtualCameraResolution);
+        m_virtualCameraResolutionCombo->blockSignals(true);
+        int index = m_virtualCameraResolutionCombo->findData(key);
+        if (index < 0) {
+            const QSize customSize = resolutionSizeForKey(key);
+            if (customSize.isValid()) {
+                const QString label = tr("Custom (%1 × %2)")
+                    .arg(customSize.width())
+                    .arg(customSize.height());
+                m_virtualCameraResolutionCombo->addItem(label, key);
+                index = m_virtualCameraResolutionCombo->count() - 1;
+            } else {
+                index = m_virtualCameraResolutionCombo->findData(QStringLiteral("match"));
+            }
+        }
+        if (index >= 0) {
+            m_virtualCameraResolutionCombo->setCurrentIndex(index);
+        }
+        m_virtualCameraResolutionCombo->blockSignals(false);
     }
 
     m_virtualCameraErrorNotified = false;
@@ -1106,6 +1227,7 @@ void MainWindow::onPreviewFormatChanged(const QString &formatId)
     settings.previewFormat = formatId.toStdString();
     m_controller->getConfig().setSettings(settings);
     m_controller->saveConfig();
+    updateVirtualCameraStreamerState();
 }
 
 void MainWindow::onPresetUpdated(int index, double pan, double tilt, double zoom, bool defined)
@@ -1353,6 +1475,29 @@ void MainWindow::onVirtualCameraDeviceEdited()
 
     auto settings = m_controller->getConfig().getSettings();
     settings.virtualCameraDevice = path.toStdString();
+    m_controller->getConfig().setSettings(settings);
+    m_controller->saveConfig();
+
+    m_virtualCameraErrorNotified = false;
+    updateVirtualCameraStreamerState();
+}
+
+void MainWindow::onVirtualCameraResolutionChanged(int index)
+{
+    if (!m_virtualCameraResolutionCombo || index < 0) {
+        return;
+    }
+
+    const QString key = m_virtualCameraResolutionCombo->itemData(index).toString();
+
+    auto settings = m_controller->getConfig().getSettings();
+    const QString currentKey = QString::fromStdString(settings.virtualCameraResolution);
+    if (key == currentKey) {
+        updateVirtualCameraStreamerState();
+        return;
+    }
+
+    settings.virtualCameraResolution = key.isEmpty() ? std::string("match") : key.toStdString();
     m_controller->getConfig().setSettings(settings);
     m_controller->saveConfig();
 

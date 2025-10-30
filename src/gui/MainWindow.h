@@ -22,6 +22,7 @@ class QTabWidget;
 class QFrame;
 class QWidget;
 class QLineEdit;
+class QComboBox;
 class VirtualCameraStreamer;
 
 /**
@@ -57,6 +58,7 @@ private slots:
     void onPreviewWindowClosed();
     void onVirtualCameraToggled(bool enabled);
     void onVirtualCameraDeviceEdited();
+    void onVirtualCameraResolutionChanged(int index);
     void onVirtualCameraError(const QString &message);
 
 private:
@@ -96,6 +98,7 @@ private:
     QHBoxLayout *m_mainLayout;
     QCheckBox *m_virtualCameraCheckbox;
     QLineEdit *m_virtualCameraDeviceEdit;
+    QComboBox *m_virtualCameraResolutionCombo;
 
     // Control widgets
     TrackingControlWidget *m_trackingWidget;
