@@ -3,12 +3,16 @@
 #include <QByteArray>
 #include <QImage>
 #include <QLoggingCategory>
+#include <QMetaObject>
+#include <QMetaType>
+#include <QQueue>
+#include <QThread>
 
+#include <algorithm>
 #include <cerrno>
 #include <cstdint>
 #include <cstring>
 #include <fcntl.h>
-#include <algorithm>
 #include <linux/videodev2.h>
 #include <sys/ioctl.h>
 #include <unistd.h>
@@ -99,21 +103,313 @@ bool convertRgbToYuyv(const QImage &image, QByteArray &outBuffer)
 
 } // namespace
 
+class VirtualCameraStreamerWorker : public QObject
+{
+    Q_OBJECT
+
+public:
+    VirtualCameraStreamerWorker()
+        : m_fd(-1)
+        , m_devicePath(QString::fromLatin1(kDefaultDevicePath))
+        , m_enabled(false)
+        , m_deviceConfigured(false)
+        , m_frameWidth(0)
+        , m_frameHeight(0)
+        , m_processing(false)
+    {
+    }
+
+    ~VirtualCameraStreamerWorker() override
+    {
+        shutdown();
+    }
+
+public slots:
+    void setDevicePath(const QString &path)
+    {
+        const QString normalized = path.trimmed().isEmpty()
+            ? QString::fromLatin1(kDefaultDevicePath)
+            : path.trimmed();
+
+        if (normalized == m_devicePath) {
+            return;
+        }
+
+        m_devicePath = normalized;
+        closeDevice();
+    }
+
+    void setForcedResolution(const QSize &resolution)
+    {
+        const QSize normalized = resolution.isValid() ? resolution : QSize();
+        if (normalized == m_forcedResolution) {
+            return;
+        }
+
+        m_forcedResolution = normalized;
+        m_deviceConfigured = false;
+    }
+
+    void setEnabled(bool enabled)
+    {
+        if (m_enabled == enabled) {
+            return;
+        }
+
+        m_enabled = enabled;
+        if (!m_enabled) {
+            clearQueue();
+            closeDevice();
+        }
+
+        emit streamingStateChanged(m_enabled);
+
+        if (m_enabled && !m_frameQueue.isEmpty() && !m_processing) {
+            m_processing = true;
+            QMetaObject::invokeMethod(this, &VirtualCameraStreamerWorker::processNextFrame, Qt::QueuedConnection);
+        }
+    }
+
+    void processFrame(const QImage &frame)
+    {
+        if (!m_enabled || frame.isNull()) {
+            return;
+        }
+
+        if (m_frameQueue.size() >= 3) {
+            m_frameQueue.dequeue(); // Drop oldest frame to avoid backlog
+        }
+
+        m_frameQueue.enqueue(frame);
+
+        if (!m_processing) {
+            m_processing = true;
+            QMetaObject::invokeMethod(this, &VirtualCameraStreamerWorker::processNextFrame, Qt::QueuedConnection);
+        }
+    }
+
+    void shutdown()
+    {
+        m_enabled = false;
+        clearQueue();
+        closeDevice();
+    }
+
+signals:
+    void errorOccurred(const QString &message);
+    void streamingStateChanged(bool enabled);
+
+private:
+    void processNextFrame()
+    {
+        if (!m_enabled) {
+            m_processing = false;
+            clearQueue();
+            return;
+        }
+
+        if (m_frameQueue.isEmpty()) {
+            m_processing = false;
+            return;
+        }
+
+        QImage image = prepareFrame(m_frameQueue.dequeue());
+        if (!image.isNull()) {
+            const int width = image.width();
+            const int height = image.height();
+            if (ensureDevice(width, height)) {
+                if (!writeFrame(image)) {
+                    closeDevice();
+                }
+            }
+        }
+
+        if (!m_frameQueue.isEmpty() && m_enabled) {
+            QMetaObject::invokeMethod(this, &VirtualCameraStreamerWorker::processNextFrame, Qt::QueuedConnection);
+        } else {
+            m_processing = false;
+        }
+    }
+
+    QImage prepareFrame(const QImage &frame) const
+    {
+        if (frame.isNull()) {
+            return QImage();
+        }
+
+        QImage image = frame;
+        if (image.format() != QImage::Format_RGB888) {
+            image = image.convertToFormat(QImage::Format_RGB888);
+            if (image.isNull()) {
+                qCWarning(VirtualCameraLog) << "Failed to convert frame to RGB888 format";
+                return QImage();
+            }
+        }
+
+        QSize targetSize = m_forcedResolution.isValid() ? m_forcedResolution : image.size();
+        if (targetSize.width() <= 0 || targetSize.height() <= 0) {
+            return QImage();
+        }
+
+        if (image.size() != targetSize) {
+            if (m_forcedResolution.isValid()) {
+                QImage scaled = image.scaled(targetSize, Qt::KeepAspectRatioByExpanding, Qt::SmoothTransformation);
+                if (scaled.isNull()) {
+                    qCWarning(VirtualCameraLog) << "Failed to scale frame to forced resolution" << targetSize;
+                    return QImage();
+                }
+
+                if (scaled.size() != targetSize) {
+                    const int xOffset = std::max(0, (scaled.width() - targetSize.width()) / 2);
+                    const int yOffset = std::max(0, (scaled.height() - targetSize.height()) / 2);
+                    image = scaled.copy(xOffset, yOffset, targetSize.width(), targetSize.height());
+                } else {
+                    image = scaled;
+                }
+            } else {
+                image = image.scaled(targetSize, Qt::IgnoreAspectRatio, Qt::SmoothTransformation);
+            }
+        }
+
+        if (image.format() != QImage::Format_RGB888) {
+            image = image.convertToFormat(QImage::Format_RGB888);
+        }
+
+        return image;
+    }
+
+    bool ensureDevice(int width, int height)
+    {
+        if (m_fd == -1) {
+            m_fd = ::open(m_devicePath.toLocal8Bit().constData(), O_WRONLY);
+            if (m_fd == -1) {
+                emit errorOccurred(tr("Cannot open virtual camera device %1: %2")
+                    .arg(m_devicePath, errnoString()));
+                qCWarning(VirtualCameraLog) << "Failed to open device" << m_devicePath << errnoString();
+                m_enabled = false;
+                emit streamingStateChanged(false);
+                return false;
+            }
+            m_deviceConfigured = false;
+        }
+
+        if (!m_deviceConfigured || width != m_frameWidth || height != m_frameHeight) {
+            if (!configureFormat(width, height)) {
+                closeDevice();
+                m_enabled = false;
+                emit streamingStateChanged(false);
+                return false;
+            }
+            m_deviceConfigured = true;
+            m_frameWidth = width;
+            m_frameHeight = height;
+        }
+
+        return true;
+    }
+
+    bool configureFormat(int width, int height)
+    {
+        if (m_fd == -1) {
+            return false;
+        }
+
+        struct v4l2_format format;
+        memset(&format, 0, sizeof(format));
+        format.type = V4L2_BUF_TYPE_VIDEO_OUTPUT;
+        format.fmt.pix.width = width;
+        format.fmt.pix.height = height;
+        format.fmt.pix.pixelformat = V4L2_PIX_FMT_YUYV;
+        format.fmt.pix.field = V4L2_FIELD_NONE;
+        format.fmt.pix.colorspace = V4L2_COLORSPACE_SRGB;
+        format.fmt.pix.bytesperline = width * 2;
+        format.fmt.pix.sizeimage = format.fmt.pix.bytesperline * height;
+
+        if (ioctl(m_fd, VIDIOC_S_FMT, &format) == -1) {
+            emit errorOccurred(tr("Failed to configure virtual camera format: %1")
+                .arg(errnoString()));
+            qCWarning(VirtualCameraLog) << "VIDIOC_S_FMT failed" << errnoString();
+            return false;
+        }
+
+        return true;
+    }
+
+    bool writeFrame(const QImage &image)
+    {
+        if (m_fd == -1) {
+            return false;
+        }
+
+        QByteArray buffer;
+        if (!convertRgbToYuyv(image, buffer)) {
+            emit errorOccurred(tr("Failed to convert frame for virtual camera output"));
+            qCWarning(VirtualCameraLog) << "Frame conversion to YUYV failed";
+            return false;
+        }
+
+        const ssize_t frameSize = buffer.size();
+        const ssize_t written = ::write(m_fd, buffer.constData(), frameSize);
+        if (written != frameSize) {
+            emit errorOccurred(tr("Failed to write frame to virtual camera: %1")
+                .arg(errnoString()));
+            qCWarning(VirtualCameraLog) << "Short write to device" << written << "expected" << frameSize;
+            return false;
+        }
+
+        return true;
+    }
+
+    void closeDevice()
+    {
+        if (m_fd != -1) {
+            ::close(m_fd);
+            m_fd = -1;
+        }
+        m_deviceConfigured = false;
+        m_frameWidth = 0;
+        m_frameHeight = 0;
+    }
+
+    void clearQueue()
+    {
+        m_frameQueue.clear();
+        m_processing = false;
+    }
+
+    int m_fd;
+    QString m_devicePath;
+    bool m_enabled;
+    bool m_deviceConfigured;
+    int m_frameWidth;
+    int m_frameHeight;
+    QSize m_forcedResolution;
+    QQueue<QImage> m_frameQueue;
+    bool m_processing;
+};
+
 VirtualCameraStreamer::VirtualCameraStreamer(QObject *parent)
     : QObject(parent)
-    , m_fd(-1)
     , m_devicePath(QString::fromLatin1(kDefaultDevicePath))
     , m_enabled(false)
-    , m_deviceConfigured(false)
-    , m_frameWidth(0)
-    , m_frameHeight(0)
     , m_forcedResolution()
+    , m_workerThread(nullptr)
+    , m_worker(nullptr)
+    , m_workerInitialized(false)
 {
+    qRegisterMetaType<QImage>("QImage");
 }
 
 VirtualCameraStreamer::~VirtualCameraStreamer()
 {
-    closeDevice();
+    if (m_workerInitialized && m_workerThread && m_worker) {
+        QMetaObject::invokeMethod(m_worker, &VirtualCameraStreamerWorker::shutdown, Qt::BlockingQueuedConnection);
+        m_workerThread->quit();
+        m_workerThread->wait();
+        m_worker = nullptr;
+        m_workerThread = nullptr;
+        m_workerInitialized = false;
+    }
 }
 
 void VirtualCameraStreamer::setDevicePath(const QString &path)
@@ -127,11 +423,13 @@ void VirtualCameraStreamer::setDevicePath(const QString &path)
     }
 
     m_devicePath = normalized;
-    m_deviceConfigured = false;
-
-    if (m_fd != -1) {
-        closeDevice();
-    }
+    ensureWorker();
+    const QString devicePathCopy = m_devicePath;
+    QMetaObject::invokeMethod(m_worker,
+        [worker = m_worker, devicePathCopy]() {
+            worker->setDevicePath(devicePathCopy);
+        },
+        Qt::QueuedConnection);
 }
 
 void VirtualCameraStreamer::setEnabled(bool enabled)
@@ -141,10 +439,13 @@ void VirtualCameraStreamer::setEnabled(bool enabled)
     }
 
     m_enabled = enabled;
-
-    if (!m_enabled) {
-        closeDevice();
-    }
+    ensureWorker();
+    const bool enabledCopy = m_enabled;
+    QMetaObject::invokeMethod(m_worker,
+        [worker = m_worker, enabledCopy]() {
+            worker->setEnabled(enabledCopy);
+        },
+        Qt::QueuedConnection);
 }
 
 void VirtualCameraStreamer::setForcedResolution(const QSize &resolution)
@@ -155,179 +456,76 @@ void VirtualCameraStreamer::setForcedResolution(const QSize &resolution)
     }
 
     m_forcedResolution = normalized;
-    closeDevice();
+    ensureWorker();
+    const QSize resolutionCopy = m_forcedResolution;
+    QMetaObject::invokeMethod(m_worker,
+        [worker = m_worker, resolutionCopy]() {
+            worker->setForcedResolution(resolutionCopy);
+        },
+        Qt::QueuedConnection);
 }
 
 void VirtualCameraStreamer::onProcessedFrameReady(const QImage &frame)
 {
-    if (!m_enabled) {
+    if (!m_enabled || frame.isNull()) {
         return;
     }
 
-    if (frame.isNull()) {
-        return;
-    }
-
-    QImage image = frame;
-    if (image.format() != QImage::Format_RGB888) {
-        image = image.convertToFormat(QImage::Format_RGB888);
-        if (image.isNull()) {
-            qCWarning(VirtualCameraLog) << "Failed to convert frame to RGB888 format";
-            return;
-        }
-    }
-
-    QSize targetSize = m_forcedResolution.isValid() ? m_forcedResolution : image.size();
-    if (targetSize.width() <= 0 || targetSize.height() <= 0) {
-        return;
-    }
-
-    if (image.size() != targetSize) {
-        if (m_forcedResolution.isValid()) {
-            QImage scaled = image.scaled(targetSize, Qt::KeepAspectRatioByExpanding, Qt::SmoothTransformation);
-            if (scaled.isNull()) {
-                qCWarning(VirtualCameraLog) << "Failed to scale frame to forced resolution" << targetSize;
-                return;
-            }
-
-            if (scaled.size() != targetSize) {
-                const int xOffset = std::max(0, (scaled.width() - targetSize.width()) / 2);
-                const int yOffset = std::max(0, (scaled.height() - targetSize.height()) / 2);
-                image = scaled.copy(xOffset, yOffset, targetSize.width(), targetSize.height());
-            } else {
-                image = scaled;
-            }
-        } else {
-            targetSize = image.size();
-        }
-    }
-
-    if (image.size() != targetSize) {
-        image = image.scaled(targetSize, Qt::IgnoreAspectRatio, Qt::SmoothTransformation);
-    }
-
-    if (image.isNull()) {
-        return;
-    }
-
-    if (image.format() != QImage::Format_RGB888) {
-        image = image.convertToFormat(QImage::Format_RGB888);
-        if (image.isNull()) {
-            qCWarning(VirtualCameraLog) << "Failed to normalize frame format after scaling";
-            return;
-        }
-    }
-
-    const int width = image.width();
-    const int height = image.height();
-
-    if (!openDevice(width, height)) {
-        return;
-    }
-
-    if (!writeFrame(image)) {
-        closeDevice();
-    }
+    ensureWorker();
+    scheduleFrameDelivery(frame);
 }
 
-bool VirtualCameraStreamer::openDevice(int width, int height)
+void VirtualCameraStreamer::ensureWorker()
 {
-    if (m_fd == -1) {
-        m_fd = ::open(m_devicePath.toLocal8Bit().constData(), O_WRONLY);
-        if (m_fd == -1) {
-            emit errorOccurred(tr("Cannot open virtual camera device %1: %2")
-                .arg(m_devicePath, errnoString()));
-            qCWarning(VirtualCameraLog) << "Failed to open device" << m_devicePath << errnoString();
-            m_enabled = false;
-            return false;
-        }
-        m_deviceConfigured = false;
+    if (m_workerInitialized) {
+        return;
     }
 
-    if (!m_deviceConfigured || width != m_frameWidth || height != m_frameHeight) {
-        if (width != m_frameWidth || height != m_frameHeight) {
-            closeDevice();
-            m_fd = ::open(m_devicePath.toLocal8Bit().constData(), O_WRONLY);
-            if (m_fd == -1) {
-                emit errorOccurred(tr("Cannot open virtual camera device %1: %2")
-                    .arg(m_devicePath, errnoString()));
-                qCWarning(VirtualCameraLog) << "Failed to reopen device" << m_devicePath << errnoString();
-                m_enabled = false;
-                return false;
-            }
-        }
-        if (!configureFormat(width, height)) {
-            closeDevice();
-            m_enabled = false;
-            return false;
-        }
-        m_deviceConfigured = true;
-        m_frameWidth = width;
-        m_frameHeight = height;
-    }
+    m_workerThread = new QThread(this);
+    m_worker = new VirtualCameraStreamerWorker();
+    m_worker->moveToThread(m_workerThread);
+    connect(m_worker, &VirtualCameraStreamerWorker::errorOccurred,
+            this, &VirtualCameraStreamer::errorOccurred);
+    connect(m_worker, &VirtualCameraStreamerWorker::streamingStateChanged,
+            this, &VirtualCameraStreamer::handleWorkerStreamingStateChanged);
+    connect(m_workerThread, &QThread::finished,
+            m_worker, &QObject::deleteLater);
 
-    return true;
+    m_workerThread->start();
+    m_workerInitialized = true;
+    const QString devicePathCopy = m_devicePath;
+    const QSize resolutionCopy = m_forcedResolution;
+    const bool enabledCopy = m_enabled;
+
+    QMetaObject::invokeMethod(m_worker,
+        [worker = m_worker, devicePathCopy]() {
+            worker->setDevicePath(devicePathCopy);
+        },
+        Qt::QueuedConnection);
+    QMetaObject::invokeMethod(m_worker,
+        [worker = m_worker, resolutionCopy]() {
+            worker->setForcedResolution(resolutionCopy);
+        },
+        Qt::QueuedConnection);
+    QMetaObject::invokeMethod(m_worker,
+        [worker = m_worker, enabledCopy]() {
+            worker->setEnabled(enabledCopy);
+        },
+        Qt::QueuedConnection);
 }
 
-void VirtualCameraStreamer::closeDevice()
+void VirtualCameraStreamer::scheduleFrameDelivery(const QImage &frame)
 {
-    if (m_fd != -1) {
-        ::close(m_fd);
-        m_fd = -1;
-    }
-    m_deviceConfigured = false;
-    m_frameWidth = 0;
-    m_frameHeight = 0;
+    QMetaObject::invokeMethod(m_worker,
+        [worker = m_worker, image = frame]() {
+            worker->processFrame(image);
+        },
+        Qt::QueuedConnection);
 }
 
-bool VirtualCameraStreamer::configureFormat(int width, int height)
+void VirtualCameraStreamer::handleWorkerStreamingStateChanged(bool enabled)
 {
-    if (m_fd == -1) {
-        return false;
-    }
-
-    struct v4l2_format format;
-    memset(&format, 0, sizeof(format));
-    format.type = V4L2_BUF_TYPE_VIDEO_OUTPUT;
-    format.fmt.pix.width = width;
-    format.fmt.pix.height = height;
-    format.fmt.pix.pixelformat = V4L2_PIX_FMT_YUYV;
-    format.fmt.pix.field = V4L2_FIELD_NONE;
-    format.fmt.pix.colorspace = V4L2_COLORSPACE_SRGB;
-    format.fmt.pix.bytesperline = width * 2;
-    format.fmt.pix.sizeimage = format.fmt.pix.bytesperline * height;
-
-    if (ioctl(m_fd, VIDIOC_S_FMT, &format) == -1) {
-        emit errorOccurred(tr("Failed to configure virtual camera format: %1")
-            .arg(errnoString()));
-        qCWarning(VirtualCameraLog) << "VIDIOC_S_FMT failed" << errnoString();
-        return false;
-    }
-
-    return true;
+    m_enabled = enabled;
 }
 
-bool VirtualCameraStreamer::writeFrame(const QImage &image)
-{
-    if (m_fd == -1) {
-        return false;
-    }
-
-    QByteArray buffer;
-    if (!convertRgbToYuyv(image, buffer)) {
-        emit errorOccurred(tr("Failed to convert frame for virtual camera output"));
-        qCWarning(VirtualCameraLog) << "Frame conversion to YUYV failed";
-        return false;
-    }
-
-    const ssize_t frameSize = buffer.size();
-    const ssize_t written = ::write(m_fd, buffer.constData(), frameSize);
-    if (written != frameSize) {
-        emit errorOccurred(tr("Failed to write frame to virtual camera: %1")
-            .arg(errnoString()));
-        qCWarning(VirtualCameraLog) << "Short write to device" << written << "expected" << frameSize;
-        return false;
-    }
-
-    return true;
-}
+#include "VirtualCameraStreamer.moc"

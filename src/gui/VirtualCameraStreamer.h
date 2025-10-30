@@ -6,6 +6,9 @@
 #include <QString>
 #include <QSize>
 
+class QThread;
+class VirtualCameraStreamerWorker;
+
 /**
  * @brief Streams preview frames into a v4l2loopback virtual camera device.
  *
@@ -36,19 +39,19 @@ public slots:
 signals:
     void errorOccurred(const QString &message);
 
-private:
-    bool openDevice(int width, int height);
-    void closeDevice();
-    bool configureFormat(int width, int height);
-    bool writeFrame(const QImage &image);
+private slots:
+    void handleWorkerStreamingStateChanged(bool enabled);
 
-    int m_fd;
+private:
+    void ensureWorker();
+    void scheduleFrameDelivery(const QImage &frame);
+
     QString m_devicePath;
     bool m_enabled;
-    bool m_deviceConfigured;
-    int m_frameWidth;
-    int m_frameHeight;
     QSize m_forcedResolution;
+    QThread *m_workerThread;
+    VirtualCameraStreamerWorker *m_worker;
+    bool m_workerInitialized;
 };
 
 #endif // VIRTUALCAMERASTREAMER_H
