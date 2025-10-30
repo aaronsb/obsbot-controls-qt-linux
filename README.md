@@ -157,6 +157,14 @@ The build script automatically:
 - Close the blocking application and try again
 - Preview automatically disabled when window is hidden/minimized
 
+### Virtual Camera
+- Official packages configure and enable the `v4l2loopback` virtual device automatically (defaults to `/dev/video42` with the label “OBSBOT Virtual Camera”).
+- Local/source installs can enable the same device manually:
+  ```bash
+  sudo modprobe v4l2loopback video_nr=42 card_label="OBSBOT Virtual Camera" exclusive_caps=1
+  ```
+- Once the module is active, toggle **Virtual Camera → Enable virtual camera output** inside the app to feed OBS/Zoom/Meet.
+
 ### System Tray
 - Click **X** button to minimize to tray (doesn't quit)
 - Click tray icon to show/hide window

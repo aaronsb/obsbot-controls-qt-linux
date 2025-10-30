@@ -70,6 +70,9 @@ sudo dnf install lsof
 This enables the application to detect when other programs are using the camera.
 
 #### Virtual Camera Output (Optional)
+Packaged builds (e.g. the Arch package/PKGBUILD) deploy a systemd unit and modprobe configuration so the `v4l2loopback` module loads automatically at boot with the correct options for `/dev/video42`.
+
+For manual/local installs you can still set it up yourself:
 ```bash
 # Arch
 sudo pacman -S v4l2loopback-dkms v4l-utils
@@ -82,7 +85,6 @@ sudo dnf install v4l2loopback v4l-utils
 ```
 
 Load the module after installation:
-
 ```bash
 sudo modprobe v4l2loopback video_nr=42 card_label="OBSBOT Virtual Camera" exclusive_caps=1
 ```
