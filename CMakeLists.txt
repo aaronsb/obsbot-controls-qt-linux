@@ -37,6 +37,8 @@ add_executable(obsbot-gui
     src/gui/FilterPreviewWidget.h
     src/gui/CameraPreviewWidget.cpp
     src/gui/CameraPreviewWidget.h
+    src/gui/VideoEffectsWidget.cpp
+    src/gui/VideoEffectsWidget.h
     src/gui/VirtualCameraStreamer.cpp
     src/gui/VirtualCameraStreamer.h
     src/gui/PreviewWindow.cpp

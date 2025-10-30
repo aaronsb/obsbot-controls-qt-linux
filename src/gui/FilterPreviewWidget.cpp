@@ -5,6 +5,7 @@
 #include <QVector2D>
 #include <QVideoFrame>
 #include <QtMath>
+#include <cmath>
 
 namespace {
 
@@ -26,55 +27,131 @@ void main()
 
 const char *kFragmentShaderSource = R"(#version 330 core
 uniform sampler2D u_texture;
-uniform int u_filter;
-uniform float u_strength;
+uniform vec2 u_texelSize;
+uniform float u_brightness;
+uniform float u_contrast;
+uniform float u_exposure;
+uniform float u_highlights;
+uniform float u_shadows;
+uniform float u_saturation;
+uniform float u_vibrance;
+uniform float u_temperature;
+uniform float u_tint;
+uniform float u_noise;
+uniform float u_blur;
+uniform float u_sharpen;
+uniform float u_glow;
+uniform float u_bloom;
+uniform float u_softFocus;
+uniform float u_duoToneIntensity;
+uniform vec3 u_duoToneShadow;
+uniform vec3 u_duoToneHighlight;
+uniform int u_horizontalFlip;
 
 in vec2 v_texCoord;
 out vec4 fragColor;
 
-vec3 toGrayscale(vec3 color)
+float luminance(vec3 color)
 {
-    float gray = dot(color, vec3(0.299, 0.587, 0.114));
-    return vec3(gray);
+    return dot(color, vec3(0.299, 0.587, 0.114));
 }
 
-vec3 toSepia(vec3 color)
+float random(vec2 co)
 {
-    float r = dot(color, vec3(0.393, 0.769, 0.189));
-    float g = dot(color, vec3(0.349, 0.686, 0.168));
-    float b = dot(color, vec3(0.272, 0.534, 0.131));
-    return vec3(r, g, b);
-}
-
-vec3 toWarm(vec3 color)
-{
-    return color + vec3(0.05, 0.03, -0.02);
-}
-
-vec3 toCool(vec3 color)
-{
-    return color + vec3(-0.02, 0.03, 0.05);
+    return fract(sin(dot(co, vec2(12.9898, 78.233))) * 43758.5453);
 }
 
 void main()
 {
-    vec4 src = texture(u_texture, vec2(v_texCoord.x, 1.0 - v_texCoord.y));
-    vec3 color = src.rgb;
-    vec3 target = color;
-
-    if (u_filter == 1) {
-        target = toGrayscale(color);
-    } else if (u_filter == 2) {
-        target = toSepia(color);
-    } else if (u_filter == 3) {
-        target = vec3(1.0) - color;
-    } else if (u_filter == 4) {
-        target = toWarm(color);
-    } else if (u_filter == 5) {
-        target = toCool(color);
+    vec2 uv = vec2(v_texCoord.x, 1.0 - v_texCoord.y);
+    if (u_horizontalFlip == 1) {
+        uv.x = 1.0 - uv.x;
     }
 
-    color = mix(color, clamp(target, 0.0, 1.0), clamp(u_strength, 0.0, 1.0));
+    vec4 src = texture(u_texture, uv);
+    vec3 color = src.rgb;
+
+    // Precompute blur kernel if needed
+    vec3 blurColor = color;
+    if (u_blur > 0.0 || u_sharpen > 0.0 || u_glow > 0.0 || u_bloom > 0.0 || u_softFocus > 0.0) {
+        vec2 offsets[9] = vec2[](
+            vec2(-1.0, -1.0), vec2(0.0, -1.0), vec2(1.0, -1.0),
+            vec2(-1.0,  0.0), vec2(0.0,  0.0), vec2(1.0,  0.0),
+            vec2(-1.0,  1.0), vec2(0.0,  1.0), vec2(1.0,  1.0)
+        );
+        float kernel[9] = float[](1.0, 2.0, 1.0,
+                                  2.0, 4.0, 2.0,
+                                  1.0, 2.0, 1.0);
+        vec3 accum = vec3(0.0);
+        float weightSum = 0.0;
+        for (int i = 0; i < 9; ++i) {
+            vec2 sampleUv = uv + offsets[i] * u_texelSize;
+            vec3 sampleColor = texture(u_texture, clamp(sampleUv, vec2(0.0), vec2(1.0))).rgb;
+            accum += sampleColor * kernel[i];
+            weightSum += kernel[i];
+        }
+        blurColor = accum / weightSum;
+    }
+
+    // Basic adjustments
+    color += vec3(u_brightness);
+    color = (color - 0.5) * (1.0 + u_contrast) + 0.5;
+    color *= pow(2.0, u_exposure);
+
+    float luma = luminance(color);
+    float shadowMask = clamp((0.5 - luma) * 2.0, 0.0, 1.0);
+    float highlightMask = clamp((luma - 0.5) * 2.0, 0.0, 1.0);
+    color += vec3(u_shadows) * shadowMask;
+    color += vec3(u_highlights) * highlightMask;
+
+    // Color adjustments
+    float newLuma = luminance(color);
+    vec3 gray = vec3(newLuma);
+    float satFactor = clamp(1.0 + u_saturation, 0.0, 2.0);
+    color = mix(gray, color, satFactor);
+
+    float currentSat = length(color - gray);
+    float vibranceFactor = clamp(1.0 + u_vibrance * (1.0 - clamp(currentSat, 0.0, 1.0)), 0.0, 2.0);
+    color = mix(gray, color, vibranceFactor);
+
+    color.r += u_temperature;
+    color.b -= u_temperature;
+    color.g += u_tint;
+
+    // Detail adjustments
+    if (u_blur > 0.0) {
+        color = mix(color, blurColor, clamp(u_blur, 0.0, 1.0));
+    }
+
+    if (u_sharpen > 0.0) {
+        vec3 sharpened = color + (color - blurColor) * (u_sharpen * 1.5);
+        color = mix(color, sharpened, clamp(u_sharpen, 0.0, 1.0));
+    }
+
+    if (u_softFocus > 0.0) {
+        color = mix(color, blurColor, clamp(u_softFocus, 0.0, 1.0));
+    }
+
+    if (u_glow > 0.0) {
+        color += blurColor * (u_glow * 0.5);
+    }
+
+    if (u_bloom > 0.0) {
+        color = mix(color, max(color, blurColor), clamp(u_bloom, 0.0, 1.0));
+    }
+
+    if (u_noise > 0.0) {
+        float noiseVal = random(uv * 1000.0);
+        color += (noiseVal - 0.5) * u_noise;
+    }
+
+    if (u_duoToneIntensity > 0.0) {
+        float tone = luminance(color);
+        vec3 duo = mix(u_duoToneShadow, u_duoToneHighlight, tone);
+        color = mix(color, duo, clamp(u_duoToneIntensity, 0.0, 1.0));
+    }
+
+    color = clamp(color, 0.0, 1.0);
     fragColor = vec4(color, src.a);
 }
 )";
@@ -85,8 +162,7 @@ FilterPreviewWidget::FilterPreviewWidget(QWidget *parent)
     : QOpenGLWidget(parent)
     , m_textureDirty(false)
     , m_emitPending(false)
-    , m_filterType(FilterType::None)
-    , m_filterStrength(1.0f)
+    , m_effectSettings(VideoEffectsSettings::defaults())
     , m_vertexBuffer(QOpenGLBuffer::VertexBuffer)
     , m_geometryInitialized(false)
 {
@@ -103,22 +179,12 @@ FilterPreviewWidget::~FilterPreviewWidget()
     }
 }
 
-void FilterPreviewWidget::setFilter(FilterType type)
+void FilterPreviewWidget::setVideoEffects(const VideoEffectsSettings &settings)
 {
-    if (m_filterType == type) {
+    if (m_effectSettings == settings) {
         return;
     }
-    m_filterType = type;
-    update();
-}
-
-void FilterPreviewWidget::setFilterStrength(float strength)
-{
-    float clamped = qBound(0.0f, strength, 1.0f);
-    if (qFuzzyCompare(clamped, m_filterStrength)) {
-        return;
-    }
-    m_filterStrength = clamped;
+    m_effectSettings = settings;
     update();
 }
 
@@ -174,6 +240,7 @@ void FilterPreviewWidget::paintGL()
     glClear(GL_COLOR_BUFFER_BIT);
 
     if (m_currentImage.isNull()) {
+        m_emitPending = false;
         return;
     }
 
@@ -186,6 +253,10 @@ void FilterPreviewWidget::paintGL()
     }
 
     const QSize frameSize = m_currentImage.size();
+    m_program->bind();
+    m_program->setUniformValue("u_texelSize", QVector2D(1.0f / frameSize.width(), 1.0f / frameSize.height()));
+    applyEffectsUniforms();
+
     ensureFramebuffer(frameSize);
 
     if (m_emitPending && m_framebuffer) {
@@ -203,6 +274,7 @@ void FilterPreviewWidget::paintGL()
     }
 
     renderToCurrentTarget(size());
+    m_program->release();
 }
 
 void FilterPreviewWidget::ensureProgram()
@@ -333,10 +405,7 @@ void FilterPreviewWidget::renderToCurrentTarget(const QSize &targetSize)
     glClear(GL_COLOR_BUFFER_BIT);
 
     m_program->bind();
-    m_program->setUniformValue("u_filter", static_cast<int>(m_filterType));
-    m_program->setUniformValue("u_strength", m_filterStrength);
     m_program->setUniformValue("u_texture", 0);
-
     const QSizeF frameSize = frameAspectSize();
     const qreal frameAspect = frameSize.width() / frameSize.height();
     const qreal targetAspect = static_cast<qreal>(targetSize.width()) / targetSize.height();
@@ -396,4 +465,52 @@ void FilterPreviewWidget::handleContextAboutToBeDestroyed()
     makeCurrent();
     cleanupGLResources();
     doneCurrent();
+}
+
+void FilterPreviewWidget::applyEffectsUniforms()
+{
+    if (!m_program) {
+        return;
+    }
+
+    const auto clamp01 = [](float value) {
+        return qBound(0.0f, value, 1.0f);
+    };
+
+    m_program->setUniformValue("u_brightness", m_effectSettings.brightness);
+    m_program->setUniformValue("u_contrast", m_effectSettings.contrast);
+    m_program->setUniformValue("u_exposure", m_effectSettings.exposure);
+    m_program->setUniformValue("u_highlights", m_effectSettings.highlights);
+    m_program->setUniformValue("u_shadows", m_effectSettings.shadows);
+    m_program->setUniformValue("u_saturation", m_effectSettings.saturation);
+    m_program->setUniformValue("u_vibrance", m_effectSettings.vibrance);
+    m_program->setUniformValue("u_temperature", m_effectSettings.temperature);
+    m_program->setUniformValue("u_tint", m_effectSettings.tint);
+    m_program->setUniformValue("u_noise", clamp01(m_effectSettings.noise));
+    m_program->setUniformValue("u_blur", clamp01(m_effectSettings.blur));
+    m_program->setUniformValue("u_sharpen", clamp01(m_effectSettings.sharpen));
+    m_program->setUniformValue("u_glow", clamp01(m_effectSettings.glow));
+    m_program->setUniformValue("u_bloom", clamp01(m_effectSettings.bloom));
+    m_program->setUniformValue("u_softFocus", clamp01(m_effectSettings.softFocus));
+    m_program->setUniformValue("u_duoToneIntensity", clamp01(m_effectSettings.duoToneIntensity));
+
+    QVector3D shadowColor = srgbColorToLinearVec3(m_effectSettings.duoToneShadow);
+    QVector3D highlightColor = srgbColorToLinearVec3(m_effectSettings.duoToneHighlight);
+    m_program->setUniformValue("u_duoToneShadow", shadowColor);
+    m_program->setUniformValue("u_duoToneHighlight", highlightColor);
+    m_program->setUniformValue("u_horizontalFlip", m_effectSettings.horizontalFlip ? 1 : 0);
+}
+
+QVector3D FilterPreviewWidget::srgbColorToLinearVec3(const QColor &color) const
+{
+    auto toLinear = [](float channel) {
+        if (channel <= 0.04045f) {
+            return channel / 12.92f;
+        }
+        return std::pow((channel + 0.055f) / 1.055f, 2.4f);
+    };
+    return QVector3D(
+        toLinear(color.redF()),
+        toLinear(color.greenF()),
+        toLinear(color.blueF()));
 }

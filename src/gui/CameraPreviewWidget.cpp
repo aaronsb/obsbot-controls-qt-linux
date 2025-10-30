@@ -11,7 +11,6 @@
 #include <QMediaCaptureSession>
 #include <QMediaDevices>
 #include <QSignalBlocker>
-#include <QSlider>
 #include <QStringList>
 #include <QVideoFrame>
 #include <QVideoSink>
@@ -67,8 +66,6 @@ CameraPreviewWidget::CameraPreviewWidget(QWidget *parent)
     , m_videoSink(nullptr)
     , m_filterPreviewWidget(nullptr)
     , m_formatCombo(nullptr)
-    , m_filterCombo(nullptr)
-    , m_filterStrengthSlider(nullptr)
     , m_statusLabel(nullptr)
     , m_controlRow(nullptr)
     , m_virtualCameraStreamer(nullptr)
@@ -105,32 +102,8 @@ void CameraPreviewWidget::setupUI()
     connect(m_formatCombo, QOverload<int>::of(&QComboBox::currentIndexChanged),
             this, &CameraPreviewWidget::onFormatSelectionChanged);
 
-    QLabel *filterLabel = new QLabel(tr("Filter:"), this);
-    filterLabel->setStyleSheet("font-size: 11px;");
-
-    m_filterCombo = new QComboBox(this);
-    m_filterCombo->setSizeAdjustPolicy(QComboBox::AdjustToContents);
-    m_filterCombo->addItem(tr("None"), static_cast<int>(FilterPreviewWidget::FilterType::None));
-    m_filterCombo->addItem(tr("Grayscale"), static_cast<int>(FilterPreviewWidget::FilterType::Grayscale));
-    m_filterCombo->addItem(tr("Sepia"), static_cast<int>(FilterPreviewWidget::FilterType::Sepia));
-    m_filterCombo->addItem(tr("Invert"), static_cast<int>(FilterPreviewWidget::FilterType::Invert));
-    m_filterCombo->addItem(tr("Warm"), static_cast<int>(FilterPreviewWidget::FilterType::Warm));
-    m_filterCombo->addItem(tr("Cool"), static_cast<int>(FilterPreviewWidget::FilterType::Cool));
-    connect(m_filterCombo, QOverload<int>::of(&QComboBox::currentIndexChanged),
-            this, &CameraPreviewWidget::onFilterSelectionChanged);
-
-    m_filterStrengthSlider = new QSlider(Qt::Horizontal, this);
-    m_filterStrengthSlider->setRange(0, 100);
-    m_filterStrengthSlider->setValue(100);
-    m_filterStrengthSlider->setToolTip(tr("Filter intensity"));
-    connect(m_filterStrengthSlider, &QSlider::valueChanged,
-            this, &CameraPreviewWidget::onFilterIntensityChanged);
-
     controlLayout->addWidget(formatLabel);
     controlLayout->addWidget(m_formatCombo, 1);
-    controlLayout->addWidget(filterLabel);
-    controlLayout->addWidget(m_filterCombo);
-    controlLayout->addWidget(m_filterStrengthSlider);
     layout->addWidget(m_controlRow);
 
     m_statusLabel = new QLabel(tr("Preview disabled"), this);
@@ -213,6 +186,22 @@ void CameraPreviewWidget::setVirtualCameraStreamer(VirtualCameraStreamer *stream
     }
 
     m_virtualCameraStreamer = streamer;
+}
+
+void CameraPreviewWidget::setVideoEffects(const FilterPreviewWidget::VideoEffectsSettings &settings)
+{
+    if (!m_filterPreviewWidget) {
+        return;
+    }
+    m_filterPreviewWidget->setVideoEffects(settings);
+}
+
+FilterPreviewWidget::VideoEffectsSettings CameraPreviewWidget::videoEffects() const
+{
+    if (!m_filterPreviewWidget) {
+        return FilterPreviewWidget::VideoEffectsSettings::defaults();
+    }
+    return m_filterPreviewWidget->videoEffects();
 }
 
 void CameraPreviewWidget::startPreview()
@@ -405,26 +394,6 @@ void CameraPreviewWidget::onFormatSelectionChanged(int index)
             startPreview();
         }
     }
-}
-
-void CameraPreviewWidget::onFilterSelectionChanged(int index)
-{
-    if (!m_filterCombo || index < 0 || !m_filterPreviewWidget) {
-        return;
-    }
-
-    const auto type = static_cast<FilterPreviewWidget::FilterType>(m_filterCombo->itemData(index).toInt());
-    m_filterPreviewWidget->setFilter(type);
-}
-
-void CameraPreviewWidget::onFilterIntensityChanged(int value)
-{
-    if (!m_filterPreviewWidget) {
-        return;
-    }
-
-    const float strength = static_cast<float>(value) / 100.0f;
-    m_filterPreviewWidget->setFilterStrength(strength);
 }
 
 QCameraFormat CameraPreviewWidget::findFormatById(const QString &id) const

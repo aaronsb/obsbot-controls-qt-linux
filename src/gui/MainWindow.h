@@ -14,6 +14,7 @@
 #include "PTZControlWidget.h"
 #include "CameraSettingsWidget.h"
 #include "CameraPreviewWidget.h"
+#include "VideoEffectsWidget.h"
 
 class PreviewWindow;
 class QSplitter;
@@ -60,6 +61,7 @@ private slots:
     void onVirtualCameraDeviceEdited();
     void onVirtualCameraResolutionChanged(int index);
     void onVirtualCameraError(const QString &message);
+    void onVideoEffectsChanged(const FilterPreviewWidget::VideoEffectsSettings &settings);
 
 private:
     void setupUI();
@@ -104,6 +106,7 @@ private:
     TrackingControlWidget *m_trackingWidget;
     PTZControlWidget *m_ptzWidget;
     CameraSettingsWidget *m_settingsWidget;
+    VideoEffectsWidget *m_effectsWidget;
     CameraPreviewWidget *m_previewWidget;
     PreviewWindow *m_previewWindow;
     VirtualCameraStreamer *m_virtualCameraStreamer;

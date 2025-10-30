@@ -4,16 +4,15 @@
 #include <QWidget>
 #include <QCamera>
 #include <QCameraFormat>
+#include "FilterPreviewWidget.h"
 
 class QCameraDevice;
 class QComboBox;
 class QLabel;
 class QMediaCaptureSession;
-class QSlider;
 class QVideoSink;
 class QWidget;
 class VirtualCameraStreamer;
-class FilterPreviewWidget;
 
 /**
  * @brief Camera preview widget with enable/disable control
@@ -40,6 +39,8 @@ public:
     void setPreferredFormatId(const QString &formatId);
     void setControlsVisible(bool visible);
     void setVirtualCameraStreamer(VirtualCameraStreamer *streamer);
+    void setVideoEffects(const FilterPreviewWidget::VideoEffectsSettings &settings);
+    FilterPreviewWidget::VideoEffectsSettings videoEffects() const;
 
 signals:
     void previewStateChanged(bool enabled);
@@ -52,8 +53,6 @@ private slots:
     void onCameraError(QCamera::Error error);
     void onFormatSelectionChanged(int index);
     void onCameraActiveChanged(bool active);
-    void onFilterSelectionChanged(int index);
-    void onFilterIntensityChanged(int value);
 
 private:
     void setupUI();
@@ -76,8 +75,6 @@ private:
     QVideoSink *m_videoSink;
     FilterPreviewWidget *m_filterPreviewWidget;
     QComboBox *m_formatCombo;
-    QComboBox *m_filterCombo;
-    QSlider *m_filterStrengthSlider;
     QLabel *m_statusLabel;
     QWidget *m_controlRow;
     VirtualCameraStreamer *m_virtualCameraStreamer;

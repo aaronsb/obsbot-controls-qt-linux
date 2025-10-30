@@ -137,6 +137,7 @@ MainWindow::MainWindow(QWidget *parent)
     , m_virtualCameraCheckbox(nullptr)
     , m_virtualCameraDeviceEdit(nullptr)
     , m_virtualCameraResolutionCombo(nullptr)
+    , m_effectsWidget(nullptr)
     , m_virtualCameraStreamer(nullptr)
     , m_isApplyingStyle(false)
     , m_virtualCameraErrorNotified(false)
@@ -337,8 +338,13 @@ void MainWindow::setupUI()
     m_tabWidget->setDocumentMode(true);
     m_tabWidget->addTab(m_trackingWidget, tr("Tracking"));
     m_tabWidget->addTab(m_ptzWidget, tr("Presets"));
-   m_tabWidget->addTab(m_settingsWidget, tr("Image"));
-   controlLayout->addWidget(m_tabWidget, 1);
+    m_tabWidget->addTab(m_settingsWidget, tr("Camera Image"));
+    m_effectsWidget = new VideoEffectsWidget(this);
+    connect(m_effectsWidget, &VideoEffectsWidget::effectsChanged,
+            this, &MainWindow::onVideoEffectsChanged);
+    m_tabWidget->addTab(m_effectsWidget, tr("Creative FX"));
+    controlLayout->addWidget(m_tabWidget, 1);
+    m_effectsWidget->reset();
 
     QGroupBox *virtualCameraGroup = new QGroupBox(tr("Virtual Camera"), m_controlCard);
     QVBoxLayout *virtualLayout = new QVBoxLayout(virtualCameraGroup);
@@ -1530,4 +1536,12 @@ void MainWindow::onVirtualCameraError(const QString &message)
     m_controller->saveConfig();
 
     updateVirtualCameraStreamerState();
+}
+
+void MainWindow::onVideoEffectsChanged(const FilterPreviewWidget::VideoEffectsSettings &settings)
+{
+    if (!m_previewWidget) {
+        return;
+    }
+    m_previewWidget->setVideoEffects(settings);
 }
