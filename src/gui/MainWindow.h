@@ -115,6 +115,7 @@ private:
     int m_dockedMinWidth;
     int m_previewCardMinWidth;
     int m_previewCardMaxWidth;
+    QSize m_lastDockedSize;
 
     // System tray
     QSystemTrayIcon *m_trayIcon;
@@ -127,6 +128,7 @@ protected:
     bool event(QEvent *event) override;
     void changeEvent(QEvent *event) override;
     void closeEvent(QCloseEvent *event) override;
+    void resizeEvent(QResizeEvent *event) override;
 };
 
 #endif // MAINWINDOW_H

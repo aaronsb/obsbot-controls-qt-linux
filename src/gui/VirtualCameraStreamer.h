@@ -2,7 +2,7 @@
 #define VIRTUALCAMERASTREAMER_H
 
 #include <QObject>
-#include <QVideoFrame>
+#include <QImage>
 #include <QString>
 
 /**
@@ -27,7 +27,7 @@ public:
     void setEnabled(bool enabled);
 
 public slots:
-    void onVideoFrameChanged(const QVideoFrame &frame);
+    void onProcessedFrameReady(const QImage &frame);
 
 signals:
     void errorOccurred(const QString &message);

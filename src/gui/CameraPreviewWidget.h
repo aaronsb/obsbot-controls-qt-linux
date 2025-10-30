@@ -9,10 +9,11 @@ class QCameraDevice;
 class QComboBox;
 class QLabel;
 class QMediaCaptureSession;
-class QVideoWidget;
+class QSlider;
+class QVideoSink;
 class QWidget;
 class VirtualCameraStreamer;
-class QVideoSink;
+class FilterPreviewWidget;
 
 /**
  * @brief Camera preview widget with enable/disable control
@@ -51,12 +52,15 @@ private slots:
     void onCameraError(QCamera::Error error);
     void onFormatSelectionChanged(int index);
     void onCameraActiveChanged(bool active);
+    void onFilterSelectionChanged(int index);
+    void onFilterIntensityChanged(int value);
 
 private:
     void setupUI();
     bool initializeCamera();
     void startPreview();
     void stopPreview();
+    void handleIncomingFrame(const QVideoFrame &frame);
     QCameraFormat findFormatById(const QString &id) const;
     QCameraDevice resolveCameraDevice() const;
     void refreshFormatOptions(const QCameraDevice &device);
@@ -69,8 +73,11 @@ private:
 
     QCamera *m_camera;
     QMediaCaptureSession *m_captureSession;
-    QVideoWidget *m_videoWidget;
+    QVideoSink *m_videoSink;
+    FilterPreviewWidget *m_filterPreviewWidget;
     QComboBox *m_formatCombo;
+    QComboBox *m_filterCombo;
+    QSlider *m_filterStrengthSlider;
     QLabel *m_statusLabel;
     QWidget *m_controlRow;
     VirtualCameraStreamer *m_virtualCameraStreamer;

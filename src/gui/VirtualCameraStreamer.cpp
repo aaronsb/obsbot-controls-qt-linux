@@ -70,23 +70,17 @@ void VirtualCameraStreamer::setEnabled(bool enabled)
     }
 }
 
-void VirtualCameraStreamer::onVideoFrameChanged(const QVideoFrame &frame)
+void VirtualCameraStreamer::onProcessedFrameReady(const QImage &frame)
 {
     if (!m_enabled) {
         return;
     }
 
-    QVideoFrame copy(frame);
-    if (!copy.isValid()) {
+    if (frame.isNull()) {
         return;
     }
 
-    QImage image = copy.toImage();
-    if (image.isNull()) {
-        qCWarning(VirtualCameraLog) << "Failed to convert frame to QImage";
-        return;
-    }
-
+    QImage image = frame;
     if (image.format() != QImage::Format_BGR888) {
         image = image.convertToFormat(QImage::Format_BGR888);
         if (image.isNull()) {
@@ -122,6 +116,17 @@ bool VirtualCameraStreamer::openDevice(int width, int height)
     }
 
     if (!m_deviceConfigured || width != m_frameWidth || height != m_frameHeight) {
+        if (width != m_frameWidth || height != m_frameHeight) {
+            closeDevice();
+            m_fd = ::open(m_devicePath.toLocal8Bit().constData(), O_WRONLY);
+            if (m_fd == -1) {
+                emit errorOccurred(tr("Cannot open virtual camera device %1: %2")
+                    .arg(m_devicePath, errnoString()));
+                qCWarning(VirtualCameraLog) << "Failed to reopen device" << m_devicePath << errnoString();
+                m_enabled = false;
+                return false;
+            }
+        }
         if (!configureFormat(width, height)) {
             closeDevice();
             m_enabled = false;

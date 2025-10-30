@@ -1,4 +1,6 @@
 #include "CameraPreviewWidget.h"
+
+#include "FilterPreviewWidget.h"
 #include "VirtualCameraStreamer.h"
 
 #include <QCamera>
@@ -9,8 +11,9 @@
 #include <QMediaCaptureSession>
 #include <QMediaDevices>
 #include <QSignalBlocker>
+#include <QSlider>
 #include <QStringList>
-#include <QVideoWidget>
+#include <QVideoFrame>
 #include <QVideoSink>
 #include <QVBoxLayout>
 #include <QHBoxLayout>
@@ -61,8 +64,11 @@ CameraPreviewWidget::CameraPreviewWidget(QWidget *parent)
     : QWidget(parent)
     , m_camera(nullptr)
     , m_captureSession(nullptr)
-    , m_videoWidget(nullptr)
+    , m_videoSink(nullptr)
+    , m_filterPreviewWidget(nullptr)
     , m_formatCombo(nullptr)
+    , m_filterCombo(nullptr)
+    , m_filterStrengthSlider(nullptr)
     , m_statusLabel(nullptr)
     , m_controlRow(nullptr)
     , m_virtualCameraStreamer(nullptr)
@@ -99,24 +105,48 @@ void CameraPreviewWidget::setupUI()
     connect(m_formatCombo, QOverload<int>::of(&QComboBox::currentIndexChanged),
             this, &CameraPreviewWidget::onFormatSelectionChanged);
 
+    QLabel *filterLabel = new QLabel(tr("Filter:"), this);
+    filterLabel->setStyleSheet("font-size: 11px;");
+
+    m_filterCombo = new QComboBox(this);
+    m_filterCombo->setSizeAdjustPolicy(QComboBox::AdjustToContents);
+    m_filterCombo->addItem(tr("None"), static_cast<int>(FilterPreviewWidget::FilterType::None));
+    m_filterCombo->addItem(tr("Grayscale"), static_cast<int>(FilterPreviewWidget::FilterType::Grayscale));
+    m_filterCombo->addItem(tr("Sepia"), static_cast<int>(FilterPreviewWidget::FilterType::Sepia));
+    m_filterCombo->addItem(tr("Invert"), static_cast<int>(FilterPreviewWidget::FilterType::Invert));
+    m_filterCombo->addItem(tr("Warm"), static_cast<int>(FilterPreviewWidget::FilterType::Warm));
+    m_filterCombo->addItem(tr("Cool"), static_cast<int>(FilterPreviewWidget::FilterType::Cool));
+    connect(m_filterCombo, QOverload<int>::of(&QComboBox::currentIndexChanged),
+            this, &CameraPreviewWidget::onFilterSelectionChanged);
+
+    m_filterStrengthSlider = new QSlider(Qt::Horizontal, this);
+    m_filterStrengthSlider->setRange(0, 100);
+    m_filterStrengthSlider->setValue(100);
+    m_filterStrengthSlider->setToolTip(tr("Filter intensity"));
+    connect(m_filterStrengthSlider, &QSlider::valueChanged,
+            this, &CameraPreviewWidget::onFilterIntensityChanged);
+
     controlLayout->addWidget(formatLabel);
     controlLayout->addWidget(m_formatCombo, 1);
+    controlLayout->addWidget(filterLabel);
+    controlLayout->addWidget(m_filterCombo);
+    controlLayout->addWidget(m_filterStrengthSlider);
     layout->addWidget(m_controlRow);
 
     m_statusLabel = new QLabel(tr("Preview disabled"), this);
     m_statusLabel->setStyleSheet("color: palette(mid); font-size: 11px;");
     layout->addWidget(m_statusLabel);
 
-    m_videoWidget = new QVideoWidget(this);
-    m_videoWidget->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Expanding);
-    m_videoWidget->setStyleSheet("background-color: palette(window);");
-    layout->addWidget(m_videoWidget, 1);
+    m_filterPreviewWidget = new FilterPreviewWidget(this);
+    m_filterPreviewWidget->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Expanding);
+    layout->addWidget(m_filterPreviewWidget, 1);
 
-    if (auto sink = m_videoWidget->videoSink(); sink && m_virtualCameraStreamer) {
-        connect(sink, &QVideoSink::videoFrameChanged,
-                m_virtualCameraStreamer, &VirtualCameraStreamer::onVideoFrameChanged,
-                Qt::UniqueConnection);
-    }
+    connect(m_filterPreviewWidget, &FilterPreviewWidget::processedFrameReady,
+            this, [this](const QImage &image) {
+                if (m_virtualCameraStreamer) {
+                    m_virtualCameraStreamer->onProcessedFrameReady(image);
+                }
+            });
 }
 
 bool CameraPreviewWidget::isPreviewEnabled() const
@@ -169,6 +199,22 @@ void CameraPreviewWidget::setPreferredFormatId(const QString &formatId)
     m_selectedFormatId = m_formatCombo->itemData(index).toString();
 }
 
+void CameraPreviewWidget::setControlsVisible(bool visible)
+{
+    if (m_controlRow) {
+        m_controlRow->setVisible(visible);
+    }
+}
+
+void CameraPreviewWidget::setVirtualCameraStreamer(VirtualCameraStreamer *streamer)
+{
+    if (m_virtualCameraStreamer == streamer) {
+        return;
+    }
+
+    m_virtualCameraStreamer = streamer;
+}
+
 void CameraPreviewWidget::startPreview()
 {
     if (m_previewEnabled) {
@@ -199,6 +245,12 @@ void CameraPreviewWidget::startPreview()
 
 void CameraPreviewWidget::stopPreview()
 {
+    if (m_videoSink) {
+        disconnect(m_videoSink, nullptr, this, nullptr);
+        delete m_videoSink;
+        m_videoSink = nullptr;
+    }
+
     if (m_camera) {
         disconnect(m_camera, nullptr, this, nullptr);
         m_camera->stop();
@@ -244,15 +296,28 @@ bool CameraPreviewWidget::initializeCamera()
 
     m_captureSession = new QMediaCaptureSession(this);
     m_captureSession->setCamera(m_camera);
-    m_captureSession->setVideoOutput(m_videoWidget);
 
-    if (auto sink = m_videoWidget->videoSink(); sink && m_virtualCameraStreamer) {
-        connect(sink, &QVideoSink::videoFrameChanged,
-                m_virtualCameraStreamer, &VirtualCameraStreamer::onVideoFrameChanged,
-                Qt::UniqueConnection);
-    }
+    m_videoSink = new QVideoSink(this);
+    connect(m_videoSink, &QVideoSink::videoFrameChanged,
+            this, &CameraPreviewWidget::handleIncomingFrame);
+
+    m_captureSession->setVideoOutput(m_videoSink);
 
     return true;
+}
+
+void CameraPreviewWidget::handleIncomingFrame(const QVideoFrame &frame)
+{
+    if (!m_filterPreviewWidget) {
+        return;
+    }
+
+    m_filterPreviewWidget->updateVideoFrame(frame);
+
+    if (frame.isValid() && frame.width() > 0 && frame.height() > 0) {
+        emit aspectRatioChanged(static_cast<double>(frame.width()) /
+                                static_cast<double>(frame.height()));
+    }
 }
 
 void CameraPreviewWidget::applySelectedFormat()
@@ -340,6 +405,26 @@ void CameraPreviewWidget::onFormatSelectionChanged(int index)
             startPreview();
         }
     }
+}
+
+void CameraPreviewWidget::onFilterSelectionChanged(int index)
+{
+    if (!m_filterCombo || index < 0 || !m_filterPreviewWidget) {
+        return;
+    }
+
+    const auto type = static_cast<FilterPreviewWidget::FilterType>(m_filterCombo->itemData(index).toInt());
+    m_filterPreviewWidget->setFilter(type);
+}
+
+void CameraPreviewWidget::onFilterIntensityChanged(int value)
+{
+    if (!m_filterPreviewWidget) {
+        return;
+    }
+
+    const float strength = static_cast<float>(value) / 100.0f;
+    m_filterPreviewWidget->setFilterStrength(strength);
 }
 
 QCameraFormat CameraPreviewWidget::findFormatById(const QString &id) const
@@ -557,32 +642,4 @@ QCameraFormat CameraPreviewWidget::chooseDefaultFormat() const
 bool CameraPreviewWidget::isJpegFormat(const QCameraFormat &format) const
 {
     return format.pixelFormat() == QVideoFrameFormat::Format_Jpeg;
-}
-
-void CameraPreviewWidget::setControlsVisible(bool visible)
-{
-    if (m_controlRow) {
-        m_controlRow->setVisible(visible);
-    }
-}
-
-void CameraPreviewWidget::setVirtualCameraStreamer(VirtualCameraStreamer *streamer)
-{
-    if (m_virtualCameraStreamer == streamer) {
-        return;
-    }
-
-    if (auto sink = m_videoWidget ? m_videoWidget->videoSink() : nullptr) {
-        if (m_virtualCameraStreamer) {
-            disconnect(sink, &QVideoSink::videoFrameChanged,
-                       m_virtualCameraStreamer, &VirtualCameraStreamer::onVideoFrameChanged);
-        }
-        if (streamer) {
-            connect(sink, &QVideoSink::videoFrameChanged,
-                    streamer, &VirtualCameraStreamer::onVideoFrameChanged,
-                    Qt::UniqueConnection);
-        }
-    }
-
-    m_virtualCameraStreamer = streamer;
 }

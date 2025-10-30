@@ -30,6 +30,7 @@ A native Qt6 application for controlling OBSBOT cameras on Linux. Provides full 
 - **Usage Detection** - Warns when camera is in use by other applications (Chrome, OBS, Zoom)
 - **Resource Management** - Automatically releases camera when not needed
 - **Intelligent Layout** - Window expands only when preview successfully opens
+- **GPU Filters** - Apply GLSL-driven color filters with adjustable intensity for both preview and virtual camera output
 
 ### System Integration
 - **System Tray** - Minimize to tray, click to restore
@@ -156,6 +157,7 @@ The build script automatically:
 - If another app is using the camera, you'll see a warning with the process name
 - Close the blocking application and try again
 - Preview automatically disabled when window is hidden/minimized
+- Use the **Filter** controls above the preview to apply GPU shaders (None, Grayscale, Sepia, Invert, Warm, Cool) and tune their intensity. Changes appear instantly in the preview and in the virtual camera stream.
 
 ### Virtual Camera
 - Official packages configure and enable the `v4l2loopback` virtual device automatically (defaults to `/dev/video42` with the label “OBSBOT Virtual Camera”).

@@ -15,6 +15,7 @@
 #include <QMediaDevices>
 #include <QCameraDevice>
 #include <QCloseEvent>
+#include <QResizeEvent>
 #include <QFrame>
 #include <QStyle>
 #include <QSplitter>
@@ -98,6 +99,8 @@ MainWindow::MainWindow(QWidget *parent)
 
     setupUI();
     setupTrayIcon();
+
+    m_lastDockedSize = size();
 
     // Load configuration
     loadConfiguration();
@@ -538,6 +541,8 @@ void MainWindow::detachPreviewToWindow()
         return;
     }
 
+    m_lastDockedSize = size();
+
     if (m_previewStack->indexOf(m_previewWidget) != -1) {
         m_previewStack->removeWidget(m_previewWidget);
     }
@@ -582,6 +587,7 @@ void MainWindow::attachPreviewToPanel()
         if (m_previewStack->indexOf(m_previewWidget) == -1) {
             m_previewStack->insertWidget(0, m_previewWidget);
         }
+        m_lastDockedSize = size();
         return;
     }
 
@@ -615,10 +621,17 @@ void MainWindow::attachPreviewToPanel()
         m_widthLocked = false;
         setMinimumWidth(m_dockedMinWidth);
         setMaximumWidth(QWIDGETSIZE_MAX);
-        resize(std::max(width(), m_dockedMinWidth), height());
+        const int targetWidth = m_lastDockedSize.width() > 0
+            ? std::max(m_lastDockedSize.width(), m_dockedMinWidth)
+            : std::max(width(), m_dockedMinWidth);
+        const int targetHeight = m_lastDockedSize.height() > 0
+            ? m_lastDockedSize.height()
+            : height();
+        resize(targetWidth, targetHeight);
     }
 
     m_previewDetached = false;
+    m_lastDockedSize = size();
 }
 
 void MainWindow::updatePreviewControls()
@@ -1030,6 +1043,14 @@ void MainWindow::changeEvent(QEvent *event)
             }
         }
     }
+}
+
+void MainWindow::resizeEvent(QResizeEvent *event)
+{
+    if (!m_previewDetached && !m_widthLocked) {
+        m_lastDockedSize = event->size();
+    }
+    QMainWindow::resizeEvent(event);
 }
 
 void MainWindow::onPreviewStarted()
