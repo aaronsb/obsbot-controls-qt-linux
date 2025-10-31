@@ -76,6 +76,8 @@ private:
     void attachPreviewToPanel();
     void updatePreviewControls();
     void updateStatusBanner(bool connected);
+    QString currentVirtualCameraDevicePath() const;
+    void updateVirtualCameraAvailability(const QString &devicePath);
     void updateVirtualCameraStreamerState();
 
     // Controller
@@ -101,6 +103,7 @@ private:
     QCheckBox *m_virtualCameraCheckbox;
     QLineEdit *m_virtualCameraDeviceEdit;
     QComboBox *m_virtualCameraResolutionCombo;
+    QLabel *m_virtualCameraStatusLabel;
 
     // Control widgets
     TrackingControlWidget *m_trackingWidget;
@@ -129,6 +132,7 @@ private:
 
     bool m_isApplyingStyle;
     bool m_virtualCameraErrorNotified;
+    bool m_virtualCameraAvailable;
 
 protected:
     bool event(QEvent *event) override;

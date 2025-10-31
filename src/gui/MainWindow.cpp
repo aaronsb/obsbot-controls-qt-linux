@@ -29,6 +29,7 @@
 #include <QColor>
 #include <QPalette>
 #include <QList>
+#include <QFileInfo>
 #include <iostream>
 #include <array>
 #include <algorithm>
@@ -124,6 +125,15 @@ bool isDefaultResolutionKey(const QString &key)
     return false;
 }
 
+QString modprobeCommandForDevice(const QString &devicePath)
+{
+    static const QRegularExpression videoRegex(QStringLiteral("^/dev/video(\\d+)$"));
+    const QRegularExpressionMatch match = videoRegex.match(devicePath.trimmed());
+    const QString videoNr = match.hasMatch() ? match.captured(1) : QStringLiteral("42");
+    return MainWindow::tr("sudo modprobe v4l2loopback video_nr=%1 card_label=\"OBSBOT Virtual Camera\" exclusive_caps=1")
+        .arg(videoNr);
+}
+
 } // namespace
 
 MainWindow::MainWindow(QWidget *parent)
@@ -137,10 +147,12 @@ MainWindow::MainWindow(QWidget *parent)
     , m_virtualCameraCheckbox(nullptr)
     , m_virtualCameraDeviceEdit(nullptr)
     , m_virtualCameraResolutionCombo(nullptr)
+    , m_virtualCameraStatusLabel(nullptr)
     , m_effectsWidget(nullptr)
     , m_virtualCameraStreamer(nullptr)
     , m_isApplyingStyle(false)
     , m_virtualCameraErrorNotified(false)
+    , m_virtualCameraAvailable(false)
 {
     setWindowTitle("OBSBOT Control");
     setWindowIcon(QIcon(":/icons/camera.svg"));
@@ -371,6 +383,13 @@ void MainWindow::setupUI()
     virtualDeviceLayout->addWidget(m_virtualCameraDeviceEdit, 1);
 
     virtualLayout->addLayout(virtualDeviceLayout);
+
+    m_virtualCameraStatusLabel = new QLabel(
+        tr("Virtual camera support requires the v4l2loopback kernel module."),
+        virtualCameraGroup);
+    m_virtualCameraStatusLabel->setWordWrap(true);
+    m_virtualCameraStatusLabel->setObjectName("virtualCameraStatus");
+    virtualLayout->addWidget(m_virtualCameraStatusLabel);
 
     QHBoxLayout *virtualResolutionLayout = new QHBoxLayout();
     virtualResolutionLayout->setContentsMargins(0, 0, 0, 0);
@@ -936,20 +955,69 @@ void MainWindow::updateStatus()
     m_statusLabel->setText("Status: " + statusParts.join(" | "));
 }
 
+QString MainWindow::currentVirtualCameraDevicePath() const
+{
+    if (!m_virtualCameraDeviceEdit) {
+        return QStringLiteral("/dev/video42");
+    }
+
+    const QString path = m_virtualCameraDeviceEdit->text().trimmed();
+    if (path.isEmpty()) {
+        return QStringLiteral("/dev/video42");
+    }
+
+    return path;
+}
+
+void MainWindow::updateVirtualCameraAvailability(const QString &devicePath)
+{
+    if (!m_virtualCameraStatusLabel) {
+        m_virtualCameraAvailable = false;
+        return;
+    }
+
+    const QFileInfo moduleInfo(QStringLiteral("/sys/module/v4l2loopback"));
+    const QFileInfo deviceInfo(devicePath);
+
+    const bool deviceExists = deviceInfo.exists();
+    const bool moduleLoaded = moduleInfo.exists();
+    const QString modprobeCommand = modprobeCommandForDevice(devicePath);
+
+    QString statusText;
+    QString statusColor;
+
+    if (deviceExists) {
+        statusText = tr("Virtual camera available (%1)").arg(devicePath);
+        statusColor = QStringLiteral("#2e7d32");
+        m_virtualCameraAvailable = true;
+    } else if (moduleLoaded) {
+        statusText = tr("v4l2loopback is loaded, but %1 does not exist.\nRun: %2")
+                         .arg(devicePath, modprobeCommand);
+        statusColor = QStringLiteral("#b26a00");
+        m_virtualCameraAvailable = false;
+    } else {
+        statusText = tr("Virtual camera support is disabled.\nInstall the module and load it with:\n%1")
+                         .arg(modprobeCommand);
+        statusColor = QStringLiteral("#b71c1c");
+        m_virtualCameraAvailable = false;
+    }
+
+    m_virtualCameraStatusLabel->setText(statusText);
+    m_virtualCameraStatusLabel->setStyleSheet(QStringLiteral("color: %1;").arg(statusColor));
+    if (m_virtualCameraCheckbox) {
+        m_virtualCameraCheckbox->setToolTip(statusText);
+    }
+}
+
 void MainWindow::updateVirtualCameraStreamerState()
 {
     if (!m_virtualCameraStreamer) {
         return;
     }
 
-    QString devicePath;
-    if (m_virtualCameraDeviceEdit) {
-        devicePath = m_virtualCameraDeviceEdit->text().trimmed();
-    }
-    if (devicePath.isEmpty()) {
-        devicePath = QStringLiteral("/dev/video42");
-    }
+    const QString devicePath = currentVirtualCameraDevicePath();
 
+    updateVirtualCameraAvailability(devicePath);
     m_virtualCameraStreamer->setDevicePath(devicePath);
 
     QString resolutionKey;
@@ -962,8 +1030,9 @@ void MainWindow::updateVirtualCameraStreamerState()
     const QSize forcedSize = resolutionSizeForKey(resolutionKey);
     m_virtualCameraStreamer->setForcedResolution(forcedSize);
 
-    const bool enableOutput = m_virtualCameraCheckbox && m_virtualCameraCheckbox->isChecked()
-        && m_previewWidget && m_previewWidget->isPreviewEnabled();
+    const bool userRequested = m_virtualCameraCheckbox && m_virtualCameraCheckbox->isChecked();
+    const bool previewActive = m_previewWidget && m_previewWidget->isPreviewEnabled();
+    const bool enableOutput = userRequested && previewActive && m_virtualCameraAvailable;
     m_virtualCameraStreamer->setEnabled(enableOutput);
 }
 
@@ -1460,10 +1529,16 @@ void MainWindow::onVirtualCameraToggled(bool enabled)
 
     updateVirtualCameraStreamerState();
 
-    if (enabled && !m_previewWidget->isPreviewEnabled()) {
-        QMessageBox::information(this,
-            tr("Virtual Camera Ready"),
-            tr("The virtual camera will start streaming once the live preview is enabled."));
+    if (enabled) {
+        if (!m_virtualCameraAvailable) {
+            QMessageBox::information(this,
+                tr("Virtual Camera Not Available"),
+                tr("v4l2loopback is not active yet. See the status message below for setup instructions."));
+        } else if (!m_previewWidget->isPreviewEnabled()) {
+            QMessageBox::information(this,
+                tr("Virtual Camera Ready"),
+                tr("The virtual camera will start streaming once the live preview is enabled."));
+        }
     }
 }
 
