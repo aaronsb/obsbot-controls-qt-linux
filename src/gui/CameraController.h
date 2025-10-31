@@ -5,6 +5,7 @@
 #include <QTimer>
 #include <memory>
 #include <functional>
+#include <vector>
 #include <dev/devs.hpp>
 #include "Config.h"
 
@@ -130,6 +131,7 @@ public:
     ParamRange getContrastRange() const { return m_contrastRange; }
     ParamRange getSaturationRange() const { return m_saturationRange; }
     ParamRange getWhiteBalanceKelvinRange() const { return m_whiteBalanceKelvinRange; }
+    const std::vector<int>& getSupportedWhiteBalanceTypes() const { return m_supportedWhiteBalanceTypes; }
 
 signals:
     void cameraConnected(const CameraInfo &info);
@@ -150,6 +152,10 @@ private:
     ParamRange m_contrastRange;
     ParamRange m_saturationRange;
     ParamRange m_whiteBalanceKelvinRange;
+    std::vector<int> m_supportedWhiteBalanceTypes;
+    int m_lastRequestedWhiteBalance;
+    bool m_whiteBalanceFallbackActive;
+    int m_fallbackWhiteBalanceMode;
     bool isTiny2Family() const;
 
     // Helper
@@ -159,6 +165,9 @@ private:
     void refreshControlRanges();
     void resetControlRanges();
     int clampToRange(int value, const ParamRange &range, int fallbackMin, int fallbackMax) const;
+    int whiteBalancePresetToKelvin(int mode) const;
+    bool applyManualWhiteBalance(int kelvin, int displayMode);
+    bool isWhiteBalanceTypeSupported(int mode) const;
 };
 
 #endif // CAMERACONTROLLER_H
