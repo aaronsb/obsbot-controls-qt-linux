@@ -8,7 +8,7 @@ ConditionKernelCommandLine=!nomodules
 
 [Service]
 Type=oneshot
-ExecStart=/usr/bin/modprobe v4l2loopback video_nr=42 card_label="OBSBOT Virtual Camera" exclusive_caps=1
+ExecStart=/usr/bin/modprobe v4l2loopback
 ExecStop=/usr/bin/modprobe -r v4l2loopback
 RemainAfterExit=yes
 

@@ -13,13 +13,13 @@ depends=(
     'qt6-multimedia'
     'glibc'
     'gcc-libs'
-    'v4l2loopback-dkms'
 )
 makedepends=(
     'cmake'
     'git'
 )
 optdepends=(
+    'v4l2loopback-dkms: Kernel module for optional virtual camera output'
     'lsof: Detect when camera is in use by other applications'
 )
 provides=('obsbot-control')
@@ -72,8 +72,6 @@ package() {
         "${pkgdir}/usr/share/doc/${pkgname}/README.md"
 
     # Install virtual camera bootstrap assets
-    install -Dm644 resources/modules-load.d/obsbot-virtual-camera.conf \
-        "${pkgdir}/usr/lib/modules-load.d/obsbot-virtual-camera.conf"
     install -Dm644 resources/modprobe.d/obsbot-virtual-camera.conf \
         "${pkgdir}/usr/lib/modprobe.d/obsbot-virtual-camera.conf"
     install -Dm644 resources/systemd/obsbot-virtual-camera.service \
