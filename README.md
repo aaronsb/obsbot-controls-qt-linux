@@ -160,11 +160,14 @@ The build script automatically:
 - Use the **Filter** controls above the preview to apply GPU shaders (None, Grayscale, Sepia, Invert, Warm, Cool) and tune their intensity. Changes appear instantly in the preview and in the virtual camera stream.
 
 ### Virtual Camera
-- Official packages configure and enable the `v4l2loopback` virtual device automatically (defaults to `/dev/video42` with the label “OBSBOT Virtual Camera”).
-- Local/source installs can enable the same device manually:
+- Packages ship the systemd unit and modprobe configuration needed for a virtual camera, but they are **not** enabled automatically.
+- When you want the feature, either enable the service or load the module manually:
   ```bash
+  sudo systemctl enable --now obsbot-virtual-camera.service
+  # or
   sudo modprobe v4l2loopback video_nr=42 card_label="OBSBOT Virtual Camera" exclusive_caps=1
   ```
+- The app shows whether the virtual camera device exists and gives setup guidance directly in the UI.
 - Once the module is active, toggle **Virtual Camera → Enable virtual camera output** inside the app to feed OBS/Zoom/Meet.
 
 ### System Tray
