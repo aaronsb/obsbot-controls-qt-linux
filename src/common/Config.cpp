@@ -43,6 +43,7 @@ void Config::setDefaults()
     m_settings.saturationAuto = true;
     m_settings.saturation = 128;
     m_settings.whiteBalance = 0;      // Auto
+    m_settings.whiteBalanceKelvin = 5000;
 
     // Audio defaults
     m_settings.audioAutoGain = true;
@@ -184,7 +185,8 @@ bool Config::load(std::vector<ValidationError> &errors)
         "preview_format",
         "virtual_camera_enabled",
         "virtual_camera_device",
-        "virtual_camera_resolution"
+        "virtual_camera_resolution",
+        "white_balance_kelvin"
     };
 
     auto isPresetKey = [](const std::string &key) -> bool {
@@ -489,8 +491,22 @@ bool Config::parseLine(const std::string &line, int lineNumber, std::vector<Vali
             m_settings.whiteBalance = 10;
         } else if (value == "shade" || value == "11") {
             m_settings.whiteBalance = 11;
+        } else if (value == "manual" || value == "255") {
+            m_settings.whiteBalance = 255;
         } else {
-            addError(InvalidValue, "white_balance must be auto/daylight/fluorescent/tungsten/flash/fine/cloudy/shade or numeric");
+            addError(InvalidValue, "white_balance must be auto/daylight/fluorescent/tungsten/flash/fine/cloudy/shade/manual or numeric");
+            return false;
+        }
+    } else if (key == "white_balance_kelvin") {
+        try {
+            int kelvin = std::stoi(value);
+            if (kelvin < 2000 || kelvin > 10000) {
+                addError(InvalidValue, "white_balance_kelvin must be between 2000 and 10000");
+                return false;
+            }
+            m_settings.whiteBalanceKelvin = kelvin;
+        } catch (...) {
+            addError(InvalidValue, "white_balance_kelvin must be an integer between 2000 and 10000");
             return false;
         }
     } else if (key == "audio_auto_gain") {
@@ -591,6 +607,12 @@ bool Config::validateSettings(std::vector<ValidationError> &errors)
 
     if (m_settings.trackSpeed < 0 || m_settings.trackSpeed > 5) {
         addError("track_speed out of range (must be 0-5)");
+    }
+
+    if (m_settings.whiteBalance == 255) {
+        if (m_settings.whiteBalanceKelvin < 2000 || m_settings.whiteBalanceKelvin > 10000) {
+            addError("white_balance_kelvin out of range (must be 2000-10000)");
+        }
     }
 
     for (size_t i = 0; i < m_settings.presets.size(); ++i) {
@@ -736,9 +758,12 @@ bool Config::save()
         case 9: wbStr = "fine"; break;
         case 10: wbStr = "cloudy"; break;
         case 11: wbStr = "shade"; break;
+        case 255: wbStr = "manual"; break;
         default: wbStr = "auto";
     }
-    file << "white_balance=" << wbStr << "\n\n";
+    file << "white_balance=" << wbStr << "\n";
+    file << "# Manual white balance temperature (Kelvin, only used when white_balance=manual)\n";
+    file << "white_balance_kelvin=" << m_settings.whiteBalanceKelvin << "\n\n";
 
     for (size_t i = 0; i < m_settings.presets.size(); ++i) {
         const auto &preset = m_settings.presets[i];

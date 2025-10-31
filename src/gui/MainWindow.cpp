@@ -1096,6 +1096,8 @@ void MainWindow::loadConfiguration()
         m_virtualCameraDeviceEdit->blockSignals(false);
     }
 
+    m_settingsWidget->setWhiteBalanceKelvin(settings.whiteBalanceKelvin);
+
     if (m_virtualCameraResolutionCombo) {
         const QString key = QString::fromStdString(settings.virtualCameraResolution);
         m_virtualCameraResolutionCombo->blockSignals(true);
@@ -1194,6 +1196,7 @@ CameraController::CameraState MainWindow::getUIState() const
     state.saturationAuto = m_settingsWidget->isSaturationAuto();
     state.saturation = m_settingsWidget->getSaturation();
     state.whiteBalance = m_settingsWidget->getWhiteBalance();
+    state.whiteBalanceKelvin = m_settingsWidget->getWhiteBalanceKelvin();
 
     // Get PTZ state from controller (defaults from config)
     auto currentState = m_controller->getCurrentState();

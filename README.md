@@ -170,6 +170,10 @@ The build script automatically:
 - The app shows whether the virtual camera device exists and gives setup guidance directly in the UI.
 - Once the module is active, toggle **Virtual Camera → Enable virtual camera output** inside the app to feed OBS/Zoom/Meet.
 
+### Model-Specific Extras
+- OBSBOT Tiny 2 family cameras expose additional controls (voice command toggles, LED brightness, microphone pickup distance) through the SDK.
+- The desktop app keeps these switches hidden so other models don’t surface unusable options. Advanced users can experiment via the CLI/SDK if needed.
+
 ### System Tray
 - Click **X** button to minimize to tray (doesn't quit)
 - Click tray icon to show/hide window
