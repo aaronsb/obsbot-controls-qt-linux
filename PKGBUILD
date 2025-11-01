@@ -1,7 +1,7 @@
 # Maintainer: Aaron Bockelie <aaronsb@gmail.com>
 pkgname=obsbot-camera-control
-pkgver=1.0.0
-pkgrel=5
+pkgver=1.1.0
+pkgrel=1
 pkgdesc="Native Linux control app for OBSBOT cameras with PTZ, auto-framing, presets, and live preview"
 arch=('x86_64')
 url="https://github.com/aaronsb/${pkgname}"
