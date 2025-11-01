@@ -166,14 +166,22 @@ print_msg "$GREEN" "✓ AUR repository ready"
 echo ""
 
 # Copy files to AUR repo
-print_msg "$BLUE" "📋 Copying PKGBUILD and .SRCINFO..."
+print_msg "$BLUE" "📋 Copying PKGBUILD, .SRCINFO, and .install files..."
 cp PKGBUILD .SRCINFO "$AUR_DIR/"
+# Copy .install file if it exists
+if [ -f "obsbot-camera-control.install" ]; then
+    cp obsbot-camera-control.install "$AUR_DIR/"
+fi
 print_msg "$GREEN" "✓ Files copied"
 echo ""
 
 # Commit to AUR
 cd "$AUR_DIR"
 git add PKGBUILD .SRCINFO
+# Add .install file if it exists
+if [ -f "obsbot-camera-control.install" ]; then
+    git add obsbot-camera-control.install
+fi
 
 # Check if there are changes
 if git diff --cached --quiet; then
